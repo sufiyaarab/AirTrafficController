@@ -1,8 +1,5 @@
 # Air Traffic Controller but Different
 
-SOFE4790U Distributed Systems, Fall 2026. Simulated air traffic control where
-every airspace sector is a 3-node Raft cluster.
-
 ## What you need
 
 - **Docker Desktop** (or Docker Engine + Compose v2). That is all you need to
@@ -25,21 +22,6 @@ docker compose --profile maekawa up --build   # also start the Maekawa baseline
 
 Stop with `docker compose down`. That also wipes the Raft logs, because they
 live in each container's filesystem; `docker kill` / `docker start` keep them.
-
-## What starts
-
-| Containers | Count | What it is |
-|---|---|---|
-| `sector-1..4-{a,b,c}` | 12 | Four airspace sectors, 3 Raft replicas each |
-| `tower-{a,b,c}` | 3 | Airport tower (15 NM circle in the middle, below 10,000 ft) |
-| `registry-{a,b,c}` | 3 | Airspace registry: flight ownership + sector map |
-| `standby-{a,b,c}` | 3 | Warm standby cluster for sector splits |
-| `gateway` | 1 | Multicasts positions to the controlling sector, coordinates 3-phase handoffs, feeds the dashboard |
-| `simulator` | 1 | Python aircraft simulator (`AIRCRAFT`, `TICK`, `SEED`) |
-| `receiver-{a,b,c}` | 3 | Ground receivers (placeholders for the spoofing cross-check) |
-| `dashboard` | 1 | React radar served by nginx, proxies `/api` and `/ws` to the gateway |
-| `maekawa-0..4` | 5 | Maekawa baseline, only with `--profile maekawa` |
-| `prometheus`, `grafana` | 2 | Only with `--profile metrics` |
 
 All 21 Raft nodes run the same Go image (`deploy/go.Dockerfile`, multi-stage:
 full Go toolchain to build, small Alpine image to run). `NODE_ID`, `CLUSTER`
@@ -93,8 +75,6 @@ abort when the target has no majority, and resume after a crash; the Maekawa
 baseline and comparison script run; the radar shows aircraft (amber while
 transferring), sectors, every node's role/term, and handoff counters.
 
-Not built yet (owner from the proposal):
-- Clearances (Sufiya)
 - Elastic split/merge using the standby cluster, sector map in the registry (Issaq)
 - gRPC in place of HTTP/JSON, mTLS, controller login, receiver cross-check (Collins)
 - Scenario files, conflict/stress modes, replay (Mashal)
