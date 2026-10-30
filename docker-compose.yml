@@ -1,0 +1,215 @@
+# Air Traffic Controller but Different: whole system in one command.
+#
+#   docker compose up --build              # 21 Raft nodes + gateway + sim + receivers + radar
+#   docker compose --profile metrics up    # also Prometheus (9090) and Grafana (3001)
+#   docker compose --profile maekawa up    # also the 5 Maekawa baseline processes
+#
+# Radar dashboard: http://localhost:3000   Gateway API: http://localhost:8080/api/state
+#
+# Every Raft node runs the same image. NODE_ID must equal the service name,
+# because nodes and the gateway reach each other by that hostname.
+
+name: atc
+
+# The Go image is built ONCE, by the gateway service below. Every other Go
+# service reuses it (pull_policy: never), instead of 22 parallel builds that
+# can run Docker Desktop out of memory.
+x-go-image: &go-image
+  image: atc/go:dev
+  pull_policy: never
+
+x-node: &node
+  <<: *go-image
+  command: ["atc-node"]
+  cap_add: [NET_ADMIN]   # lets scripts/chaos.sh add tc netem delay/loss inside a node
+  restart: "no"          # a killed node stays down until the chaos script restarts it
+  networks: [atc]
+  healthcheck:
+    test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+    interval: 5s
+    timeout: 2s
+    retries: 3
+
+x-peers-sector-1: &peers-sector-1 "sector-1-a=sector-1-a:7000,sector-1-b=sector-1-b:7000,sector-1-c=sector-1-c:7000"
+x-peers-sector-2: &peers-sector-2 "sector-2-a=sector-2-a:7000,sector-2-b=sector-2-b:7000,sector-2-c=sector-2-c:7000"
+x-peers-sector-3: &peers-sector-3 "sector-3-a=sector-3-a:7000,sector-3-b=sector-3-b:7000,sector-3-c=sector-3-c:7000"
+x-peers-sector-4: &peers-sector-4 "sector-4-a=sector-4-a:7000,sector-4-b=sector-4-b:7000,sector-4-c=sector-4-c:7000"
+x-peers-tower: &peers-tower "tower-a=tower-a:7000,tower-b=tower-b:7000,tower-c=tower-c:7000"
+x-peers-registry: &peers-registry "registry-a=registry-a:7000,registry-b=registry-b:7000,registry-c=registry-c:7000"
+x-peers-standby: &peers-standby "standby-a=standby-a:7000,standby-b=standby-b:7000,standby-c=standby-c:7000"
+
+services:
+
+  # --- Airspace sectors: 4 clusters x 3 replicas ---
+  sector-1-a:
+    <<: *node
+    environment: { NODE_ID: sector-1-a, CLUSTER: sector-1, PEERS: *peers-sector-1 }
+  sector-1-b:
+    <<: *node
+    environment: { NODE_ID: sector-1-b, CLUSTER: sector-1, PEERS: *peers-sector-1 }
+  sector-1-c:
+    <<: *node
+    environment: { NODE_ID: sector-1-c, CLUSTER: sector-1, PEERS: *peers-sector-1 }
+  sector-2-a:
+    <<: *node
+    environment: { NODE_ID: sector-2-a, CLUSTER: sector-2, PEERS: *peers-sector-2 }
+  sector-2-b:
+    <<: *node
+    environment: { NODE_ID: sector-2-b, CLUSTER: sector-2, PEERS: *peers-sector-2 }
+  sector-2-c:
+    <<: *node
+    environment: { NODE_ID: sector-2-c, CLUSTER: sector-2, PEERS: *peers-sector-2 }
+  sector-3-a:
+    <<: *node
+    environment: { NODE_ID: sector-3-a, CLUSTER: sector-3, PEERS: *peers-sector-3 }
+  sector-3-b:
+    <<: *node
+    environment: { NODE_ID: sector-3-b, CLUSTER: sector-3, PEERS: *peers-sector-3 }
+  sector-3-c:
+    <<: *node
+    environment: { NODE_ID: sector-3-c, CLUSTER: sector-3, PEERS: *peers-sector-3 }
+  sector-4-a:
+    <<: *node
+    environment: { NODE_ID: sector-4-a, CLUSTER: sector-4, PEERS: *peers-sector-4 }
+  sector-4-b:
+    <<: *node
+    environment: { NODE_ID: sector-4-b, CLUSTER: sector-4, PEERS: *peers-sector-4 }
+  sector-4-c:
+    <<: *node
+    environment: { NODE_ID: sector-4-c, CLUSTER: sector-4, PEERS: *peers-sector-4 }
+
+  # --- Airport tower ---
+  tower-a:
+    <<: *node
+    environment: { NODE_ID: tower-a, CLUSTER: tower, PEERS: *peers-tower }
+  tower-b:
+    <<: *node
+    environment: { NODE_ID: tower-b, CLUSTER: tower, PEERS: *peers-tower }
+  tower-c:
+    <<: *node
+    environment: { NODE_ID: tower-c, CLUSTER: tower, PEERS: *peers-tower }
+
+  # --- Airspace registry: who owns each flight, versioned sector map ---
+  registry-a:
+    <<: *node
+    environment: { NODE_ID: registry-a, CLUSTER: registry, PEERS: *peers-registry }
+  registry-b:
+    <<: *node
+    environment: { NODE_ID: registry-b, CLUSTER: registry, PEERS: *peers-registry }
+  registry-c:
+    <<: *node
+    environment: { NODE_ID: registry-c, CLUSTER: registry, PEERS: *peers-registry }
+
+  # --- Warm standby cluster: takes over half a sector when one splits ---
+  standby-a:
+    <<: *node
+    environment: { NODE_ID: standby-a, CLUSTER: standby, PEERS: *peers-standby }
+  standby-b:
+    <<: *node
+    environment: { NODE_ID: standby-b, CLUSTER: standby, PEERS: *peers-standby }
+  standby-c:
+    <<: *node
+    environment: { NODE_ID: standby-c, CLUSTER: standby, PEERS: *peers-standby }
+
+  # --- Edge services ---
+  gateway:
+    build:
+      context: .
+      dockerfile: deploy/go.Dockerfile
+    image: atc/go:dev
+    command: ["atc-gateway"]
+    environment:
+      CLUSTERS: "sector-1=sector-1-a,sector-1-b,sector-1-c;sector-2=sector-2-a,sector-2-b,sector-2-c;sector-3=sector-3-a,sector-3-b,sector-3-c;sector-4=sector-4-a,sector-4-b,sector-4-c;tower=tower-a,tower-b,tower-c;registry=registry-a,registry-b,registry-c;standby=standby-a,standby-b,standby-c"
+    ports: ["8080:8080"]
+    networks: [atc]
+
+  simulator:
+    build: ./sim
+    environment:
+      GATEWAY: http://gateway:8080
+      AIRCRAFT: "100"
+      TICK: "1.0"
+    depends_on: [gateway]
+    networks: [atc]
+
+  receiver-a:
+    build: ./sim
+    command: ["python", "receiver.py"]
+    environment: { RECEIVER_ID: receiver-a, RECEIVER_X: "20", RECEIVER_Y: "20" }
+    networks: [atc]
+
+  receiver-b:
+    build: ./sim
+    command: ["python", "receiver.py"]
+    environment: { RECEIVER_ID: receiver-b, RECEIVER_X: "180", RECEIVER_Y: "40" }
+    networks: [atc]
+
+  receiver-c:
+    build: ./sim
+    command: ["python", "receiver.py"]
+    environment: { RECEIVER_ID: receiver-c, RECEIVER_X: "100", RECEIVER_Y: "190" }
+    networks: [atc]
+
+  dashboard:
+    build: ./dashboard
+    ports: ["3000:80"]
+    depends_on: [gateway]
+    networks: [atc]
+
+  # --- Maekawa baseline (opt-in: --profile maekawa), one process per control unit ---
+  maekawa-0:
+    <<: *go-image
+    command: ["atc-maekawa"]
+    profiles: [maekawa]
+    environment: { ME_ID: "0", PEERS: "maekawa-0:8080,maekawa-1:8080,maekawa-2:8080,maekawa-3:8080,maekawa-4:8080", THINK_MS: "500", HOLD_MS: "50" }
+    networks: [atc]
+
+  maekawa-1:
+    <<: *go-image
+    command: ["atc-maekawa"]
+    profiles: [maekawa]
+    environment: { ME_ID: "1", PEERS: "maekawa-0:8080,maekawa-1:8080,maekawa-2:8080,maekawa-3:8080,maekawa-4:8080", THINK_MS: "500", HOLD_MS: "50" }
+    networks: [atc]
+
+  maekawa-2:
+    <<: *go-image
+    command: ["atc-maekawa"]
+    profiles: [maekawa]
+    environment: { ME_ID: "2", PEERS: "maekawa-0:8080,maekawa-1:8080,maekawa-2:8080,maekawa-3:8080,maekawa-4:8080", THINK_MS: "500", HOLD_MS: "50" }
+    networks: [atc]
+
+  maekawa-3:
+    <<: *go-image
+    command: ["atc-maekawa"]
+    profiles: [maekawa]
+    environment: { ME_ID: "3", PEERS: "maekawa-0:8080,maekawa-1:8080,maekawa-2:8080,maekawa-3:8080,maekawa-4:8080", THINK_MS: "500", HOLD_MS: "50" }
+    networks: [atc]
+
+  maekawa-4:
+    <<: *go-image
+    command: ["atc-maekawa"]
+    profiles: [maekawa]
+    environment: { ME_ID: "4", PEERS: "maekawa-0:8080,maekawa-1:8080,maekawa-2:8080,maekawa-3:8080,maekawa-4:8080", THINK_MS: "500", HOLD_MS: "50" }
+    networks: [atc]
+
+  # --- Metrics (opt-in: --profile metrics) ---
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    profiles: [metrics]
+    volumes: ["./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
+    ports: ["9090:9090"]
+    networks: [atc]
+
+  grafana:
+    image: grafana/grafana:12.1.0
+    profiles: [metrics]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+    volumes: ["./deploy/grafana-datasource.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro"]
+    ports: ["3001:3000"]
+    depends_on: [prometheus]
+    networks: [atc]
+
+networks:
+  atc: {}

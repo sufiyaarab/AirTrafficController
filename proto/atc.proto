@@ -1,0 +1,59 @@
+// DRAFT interface contract, not compiled yet.
+// The scaffold currently speaks HTTP/JSON between gateway and nodes so the
+// clusters can run today. When the team switches to gRPC, generate Go stubs
+// with protoc (add a protoc step to deploy/go.Dockerfile) and Python stubs
+// for the simulator, and replace the /apply and /status handlers.
+syntax = "proto3";
+package atc;
+option go_package = "atc/proto;atcpb";
+
+message Position {
+  string callsign = 1;
+  double x_nm = 2;
+  double y_nm = 3;
+  double alt_ft = 4;
+  double heading_deg = 5;
+  double speed_kt = 6;
+  int64 timestamp_ms = 7;
+  string source = 8;   // "transponder" or a receiver ID
+  uint64 seq = 9;      // per-source sequence number: FIFO delivery check
+}
+
+message Clearance {
+  string callsign = 1;
+  string issued_by = 2; // controller ID
+  string instruction = 3; // e.g. "DESCEND FL250"
+  uint64 log_index = 4;   // Raft index, filled in on commit: the total order
+}
+
+enum OwnerStatus {
+  OWNER_STATUS_UNSPECIFIED = 0;
+  ACTIVE = 1;
+  TRANSFERRING = 2;
+}
+
+message Ownership {
+  string callsign = 1;
+  string sector = 2;
+  OwnerStatus status = 3;
+  string target_sector = 4; // set while TRANSFERRING
+  uint64 map_version = 5;   // sector map version the decision was made under
+}
+
+message HandoffRequest { string callsign = 1; string from_sector = 2; string to_sector = 3; uint64 map_version = 4; }
+message HandoffReply { bool ok = 1; Ownership ownership = 2; string reason = 3; }
+message Ack { bool ok = 1; string leader_hint = 2; }
+
+// Sector and tower clusters.
+service Sector {
+  rpc StreamPositions(stream Position) returns (Ack);
+  rpc IssueClearance(Clearance) returns (Clearance);
+}
+
+// Airspace registry cluster: the single source of truth for who owns a flight.
+service Registry {
+  rpc BeginHandoff(HandoffRequest) returns (HandoffReply);   // ACTIVE -> TRANSFERRING
+  rpc CommitHandoff(HandoffRequest) returns (HandoffReply);  // TRANSFERRING -> ACTIVE at target
+  rpc AbortHandoff(HandoffRequest) returns (HandoffReply);   // TRANSFERRING -> ACTIVE at source
+  rpc GetOwner(Ownership) returns (Ownership);
+}

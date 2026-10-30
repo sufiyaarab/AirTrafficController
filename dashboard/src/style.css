@@ -1,0 +1,11 @@
+body { margin: 0; background: #0b1410; color: #b8f5c8; font: 14px/1.4 ui-monospace, Menlo, Consolas, monospace; }
+.layout { display: flex; gap: 16px; padding: 16px; flex-wrap: wrap; }
+canvas { background: #06100b; border: 1px solid #1f3a2a; max-width: 100%; height: auto; }
+.side { min-width: 280px; flex: 1; }
+h1 { font-size: 16px; margin: 0 0 8px; }
+h2 { font-size: 13px; margin: 16px 0 4px; color: #7fd69a; }
+table { border-collapse: collapse; width: 100%; }
+td { padding: 2px 6px; border-bottom: 1px solid #1f3a2a; }
+.Leader { color: #fff; font-weight: bold; }
+.down { color: #ff6b6b; }
+.status { color: #7fd69a; }

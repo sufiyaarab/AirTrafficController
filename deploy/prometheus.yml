@@ -1,0 +1,28 @@
+global:
+  scrape_interval: 2s
+
+scrape_configs:
+  - job_name: raft-nodes
+    static_configs:
+      - targets:
+          - sector-1-a:8080
+          - sector-1-b:8080
+          - sector-1-c:8080
+          - sector-2-a:8080
+          - sector-2-b:8080
+          - sector-2-c:8080
+          - sector-3-a:8080
+          - sector-3-b:8080
+          - sector-3-c:8080
+          - sector-4-a:8080
+          - sector-4-b:8080
+          - sector-4-c:8080
+          - tower-a:8080
+          - tower-b:8080
+          - tower-c:8080
+          - registry-a:8080
+          - registry-b:8080
+          - registry-c:8080
+          - standby-a:8080
+          - standby-b:8080
+          - standby-c:8080
