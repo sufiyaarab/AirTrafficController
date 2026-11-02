@@ -129,8 +129,10 @@ services:
       GATEWAY: http://gateway:8080
       AIRCRAFT: "100"
       TICK: "1.0"
+      SCENARIO: "scenarios/basic_traffic.json"
     depends_on: [gateway]
     networks: [atc]
+
 
   receiver-a:
     build: ./sim
