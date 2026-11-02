@@ -76,7 +76,8 @@ type stats struct {
 	Queued       int     `json:"queued"`
 	McastBatches uint64  `json:"multicast_batches"`
 	McastDropped uint64  `json:"multicast_dropped"`
-	RPCs         int     `json:"rpcs"` // ownership RPCs sent (begin/accept/commit/abort/claim)
+	RPCs         int     `json:"rpcs"`     // ownership RPCs sent (begin/accept/commit/abort/claim)
+	Deferred     int     `json:"deferred"` // handoffs not started because the target was not Ready (counted per report)
 }
 
 type gateway struct {
@@ -92,6 +93,7 @@ type gateway struct {
 	outbox   map[string]map[string]position // controlling sector -> callsign -> report
 	owners   map[string]fsm.Owner           // registry's ownership table (cached)
 	inflight map[string]bool                // callsigns with a job queued or running
+	ready    map[string]readiness           // cluster -> Ready flag (ready.go)
 	st       stats
 }
 
@@ -107,6 +109,7 @@ func main() {
 		outbox:   map[string]map[string]position{},
 		owners:   map[string]fsm.Owner{},
 		inflight: map[string]bool{},
+		ready:    map[string]readiness{},
 	}
 	for c, ids := range g.clusters {
 		if c == "registry" {
@@ -232,6 +235,13 @@ func (g *gateway) accept(p position) {
 	case !owned:
 		g.enqueue(job{op: "claim", callsign: p.Callsign, to: p.Sector})
 	case o.Status == fsm.Active && o.Sector != p.Sector:
+		if !g.readyLocked(p.Sector, time.Now()) {
+			// Target has no usable leader: the accept phase would fail and
+			// abort. Leave the aircraft with its source and try again on a
+			// later report, once the target is Ready.
+			g.st.Deferred++
+			return
+		}
 		g.enqueue(job{op: "handoff", callsign: p.Callsign, from: o.Sector, to: p.Sector})
 	}
 }
@@ -413,6 +423,7 @@ func (g *gateway) pollLoop() {
 			}
 		}
 		wg.Wait()
+		g.updateReadiness(time.Now())
 		g.refreshOwners()
 	}
 }
@@ -472,6 +483,7 @@ type picture struct {
 	Clusters map[string][]nodeStatus `json:"clusters"`
 	Aircraft []position              `json:"aircraft"`
 	Handoff  stats                   `json:"handoff"`
+	Ready    map[string]readiness    `json:"ready"`
 }
 
 func (g *gateway) snapshot() picture {
@@ -479,6 +491,7 @@ func (g *gateway) snapshot() picture {
 	defer g.mu.Unlock()
 	pic := picture{Time: time.Now().UnixMilli(), Sectors: g.sectors, Clusters: map[string][]nodeStatus{}, Handoff: g.st}
 	pic.Handoff.Queued = len(g.jobs)
+	pic.Ready = g.readySnapshotLocked(time.Now())
 	for c, ids := range g.clusters {
 		for _, id := range ids {
 			pic.Clusters[c] = append(pic.Clusters[c], g.nodes[id])

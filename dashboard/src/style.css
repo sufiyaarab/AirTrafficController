@@ -9,3 +9,5 @@ td { padding: 2px 6px; border-bottom: 1px solid #1f3a2a; }
 .Leader { color: #fff; font-weight: bold; }
 .down { color: #ff6b6b; }
 .status { color: #7fd69a; }
+.ready { color: #7fd69a; font-weight: normal; }
+.notready { color: #ff6b6b; font-weight: bold; }
