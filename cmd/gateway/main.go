@@ -94,6 +94,7 @@ type gateway struct {
 	owners   map[string]fsm.Owner           // registry's ownership table (cached)
 	inflight map[string]bool                // callsigns with a job queued or running
 	ready    map[string]readiness           // cluster -> Ready flag (ready.go)
+	clr      clearanceState                 // clearance buffer and history (clearance.go)
 	st       stats
 }
 
@@ -123,6 +124,7 @@ func main() {
 	}
 	go g.pollLoop()
 	go g.flushLoop()
+	go g.clearanceLoop()
 	for range 4 {
 		go g.worker()
 	}
@@ -136,6 +138,7 @@ func main() {
 		json.NewEncoder(w).Encode(g.snapshot())
 	})
 	mux.HandleFunc("GET /ws", g.ws)
+	mux.HandleFunc("POST /api/clearance", g.clearanceHandler)
 	addr := envOr("HTTP_ADDR", ":8080")
 	log.Printf("gateway on %s, clusters=%v", addr, g.clusters)
 	log.Fatal(http.ListenAndServe(addr, mux))
@@ -484,6 +487,10 @@ type picture struct {
 	Aircraft []position              `json:"aircraft"`
 	Handoff  stats                   `json:"handoff"`
 	Ready    map[string]readiness    `json:"ready"`
+
+	Clearances      []clearance    `json:"clearances"`       // recent, newest first
+	ClearanceQueues map[string]int `json:"clearance_queues"` // cluster -> buffered count
+	ClearanceStats  clearanceStats `json:"clearance_stats"`
 }
 
 func (g *gateway) snapshot() picture {
@@ -492,6 +499,9 @@ func (g *gateway) snapshot() picture {
 	pic := picture{Time: time.Now().UnixMilli(), Sectors: g.sectors, Clusters: map[string][]nodeStatus{}, Handoff: g.st}
 	pic.Handoff.Queued = len(g.jobs)
 	pic.Ready = g.readySnapshotLocked(time.Now())
+	pic.Clearances = g.clearanceSnapshotLocked()
+	pic.ClearanceQueues = g.clr.queued()
+	pic.ClearanceStats = g.clr.st
 	for c, ids := range g.clusters {
 		for _, id := range ids {
 			pic.Clusters[c] = append(pic.Clusters[c], g.nodes[id])

@@ -25,7 +25,7 @@ function usePicture() {
   return [pic, connected]
 }
 
-function Radar({ pic }) {
+function Radar({ pic, selected, onSelect }) {
   const ref = useRef(null)
   useEffect(() => {
     const ctx = ref.current.getContext('2d')
@@ -56,10 +56,112 @@ function Radar({ pic }) {
       ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 10 * Math.sin(r), y - 10 * Math.cos(r)); ctx.stroke()
       ctx.fillStyle = '#7fd69a'
       ctx.fillText(`${ac.callsign} ${Math.round(ac.alt / 100)}`, x + 5, y - 5)
+      if (ac.callsign === selected) { // ring around the aircraft being cleared
+        ctx.strokeStyle = '#ffffff'
+        ctx.beginPath(); ctx.arc(x, y, 9, 0, 2 * Math.PI); ctx.stroke()
+      }
       ctx.strokeStyle = '#1f5a3a'
     }
-  }, [pic])
-  return <canvas ref={ref} width={PX} height={PX} />
+  }, [pic, selected])
+
+  // Click selects the nearest aircraft within 12 px. The canvas can be shown
+  // smaller than PX (max-width: 100%), so scale the click back to canvas pixels.
+  const click = (e) => {
+    const rect = ref.current.getBoundingClientRect()
+    const cx = ((e.clientX - rect.left) * PX) / rect.width
+    const cy = ((e.clientY - rect.top) * PX) / rect.height
+    const s = PX / SIZE
+    let best = null, bestD = 12
+    for (const ac of pic?.aircraft ?? []) {
+      const d = Math.hypot(ac.x * s - cx, PX - ac.y * s - cy)
+      if (d < bestD) { best = ac.callsign; bestD = d }
+    }
+    onSelect(best)
+  }
+  return <canvas ref={ref} width={PX} height={PX} onClick={click} style={{ cursor: 'crosshair' }} />
+}
+
+const PRESETS = ['CLIMB FL350', 'DESCEND FL250', 'HEADING 090', 'HEADING 270', 'REDUCE SPEED 250']
+
+// Clearance form for the selected aircraft. Login comes in the next step;
+// until then the controller name is just a text field.
+function ClearanceForm({ pic, selected }) {
+  const [instruction, setInstruction] = useState('')
+  const [issuedBy, setIssuedBy] = useState('ctrl-demo')
+  const [result, setResult] = useState(null)
+  const ac = (pic?.aircraft ?? []).find((a) => a.callsign === selected)
+
+  const send = async (text) => {
+    setResult({ status: 'sending' })
+    try {
+      const res = await fetch('/api/clearance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ callsign: selected, instruction: text, issued_by: issuedBy }),
+      })
+      setResult(await res.json())
+    } catch (err) {
+      setResult({ status: 'rejected', reason: `gateway unreachable: ${err.message}` })
+    }
+  }
+
+  if (!selected) return <div className="hint">Click an aircraft on the radar to issue a clearance.</div>
+  return (
+    <div className="clearance-form">
+      <h2>clearance · {selected}</h2>
+      {ac
+        ? <div className="hint">owner {ac.owner || '-'} · {ac.status || 'unclaimed'} · FL{Math.round(ac.alt / 100)} · hdg {Math.round(ac.heading)}</div>
+        : <div className="hint">aircraft no longer on the radar</div>}
+      <div className="row">
+        <input value={instruction} onChange={(e) => setInstruction(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && instruction.trim() && send(instruction)}
+          placeholder="e.g. DESCEND FL250" maxLength={64} />
+        <button onClick={() => send(instruction)} disabled={!instruction.trim()}>Send</button>
+      </div>
+      <div className="row presets">
+        {PRESETS.map((p) => <button key={p} onClick={() => send(p)}>{p}</button>)}
+      </div>
+      <div className="row">
+        <label>controller <input value={issuedBy} onChange={(e) => setIssuedBy(e.target.value)} /></label>
+      </div>
+      {result && <div className={`result ${result.status}`}>{describe(result)}</div>}
+    </div>
+  )
+}
+
+function describe(c) {
+  if (c.error) return `rejected: ${c.error}`
+  switch (c.status) {
+    case 'sending': return 'sending...'
+    case 'committed': return `committed in ${c.sector} at log index ${c.index}`
+    case 'pending': return `pending: ${c.reason} (waiting on ${c.waiting_on})`
+    default: return `${c.status}: ${c.reason ?? ''}`
+  }
+}
+
+// Recent clearances from the gateway; buffered ones update live.
+function Clearances({ pic }) {
+  const list = pic?.clearances ?? []
+  const st = pic?.clearance_stats
+  const queued = Object.entries(pic?.clearance_queues ?? {})
+  return (
+    <div>
+      <h2>clearances</h2>
+      {st && <div className="hint">
+        {st.committed} committed · {st.rejected} rejected · {st.expired} expired · {st.buffered} ever buffered
+        {queued.length > 0 && ` · buffered now: ${queued.map(([c, n]) => `${c} ${n}`).join(', ')}`}
+      </div>}
+      <table><tbody>
+        {list.slice(0, 10).map((c) => (
+          <tr key={c.id} className={c.status}>
+            <td>{c.callsign}</td><td>{c.instruction}</td>
+            <td>{c.status}{c.index ? ` #${c.index}` : ''}</td>
+            <td>{c.sector ?? ''}</td>
+          </tr>
+        ))}
+      </tbody></table>
+    </div>
+  )
 }
 
 function Clusters({ pic }) {
@@ -106,12 +208,15 @@ function Handoffs({ pic }) {
 
 export default function App() {
   const [pic, connected] = usePicture()
+  const [selected, setSelected] = useState(null)
   return (
     <div className="layout">
-      <Radar pic={pic} />
+      <Radar pic={pic} selected={selected} onSelect={setSelected} />
       <div className="side">
         <h1>Air Traffic Controller but Different</h1>
         <div className="status">{connected ? 'live' : 'connecting to gateway...'} · {pic?.aircraft?.length ?? 0} aircraft</div>
+        <ClearanceForm pic={pic} selected={selected} />
+        <Clearances pic={pic} />
         <Handoffs pic={pic} />
         {/* TODO: live safety-invariant panel and spoofed-aircraft alerts go here */}
         <Clusters pic={pic} />
