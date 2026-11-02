@@ -66,7 +66,7 @@ function Clusters({ pic }) {
   const names = Object.keys(pic?.clusters ?? {}).sort()
   return names.map((c) => (
     <div key={c}>
-      <h2>{c}</h2>
+      <h2>{c} <ReadyTag r={pic.ready?.[c]} /></h2>
       <table><tbody>
         {pic.clusters[c].map((n) => (
           <tr key={n.id} className={n.up ? n.state : 'down'}>
@@ -76,6 +76,14 @@ function Clusters({ pic }) {
       </tbody></table>
     </div>
   ))
+}
+
+// Gateway's Ready flag for one cluster: one leader, recently polled.
+function ReadyTag({ r }) {
+  if (!r) return null
+  if (r.ready) return <span className="ready">READY</span>
+  const secs = r.since_ms ? ((Date.now() - r.since_ms) / 1000).toFixed(1) : null
+  return <span className="notready">NOT READY ({r.reason}{secs ? `, ${secs}s` : ''})</span>
 }
 
 function Handoffs({ pic }) {
@@ -89,6 +97,7 @@ function Handoffs({ pic }) {
         <tr><td>completed</td><td>{h.handoffs}</td><td>avg {h.avg_ms?.toFixed(1)} ms</td></tr>
         <tr><td>in progress</td><td>{moving}</td><td>queued {h.queued}</td></tr>
         <tr><td>aborted</td><td>{h.aborted}</td><td>recovered {h.recovered}</td></tr>
+        <tr><td>deferred</td><td>{h.deferred ?? 0}</td><td>target not ready</td></tr>
         <tr><td>multicast</td><td>{h.multicast_batches} sent</td><td>{h.multicast_dropped} dropped</td></tr>
       </tbody></table>
     </div>
