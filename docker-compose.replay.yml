@@ -1,0 +1,8 @@
+
+services:
+  simulator:
+    environment:
+      MODE: "replay"
+      REPLAY_FILE: "recordings/traffic.jsonl"
+    volumes:
+      - ./sim/recordings:/app/recordings:ro
