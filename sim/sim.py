@@ -1,5 +1,5 @@
 
-"""Aircraft simulator with optional JSON scenario loading."""
+"""Aircraft simulator with JSON scenarios, recording, and replay."""
 
 import json
 import math
@@ -10,7 +10,9 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-SIZE = 200.0  # Airspace in nautical miles
+from recording import record_frame, replay_frames
+
+SIZE = 200.0  # Airspace width and height in nautical miles
 
 GATEWAY = os.environ.get("GATEWAY", "http://gateway:8080")
 AIRCRAFT = int(os.environ.get("AIRCRAFT", "100"))
@@ -18,7 +20,18 @@ TICK = float(os.environ.get("TICK", "1.0"))
 SEED = os.environ.get("SEED")
 SCENARIO = os.environ.get("SCENARIO", "").strip()
 
+# Simulation modes: live, record, replay
+MODE = os.environ.get("MODE", "live").strip().lower()
+RECORD_FILE = os.environ.get("RECORD_FILE", "recordings/traffic.jsonl")
+REPLAY_FILE = os.environ.get("REPLAY_FILE", "recordings/traffic.jsonl")
+
 AIRCRAFT_FIELDS = ("callsign", "x", "y", "alt", "heading", "speed")
+
+
+def resolve_path(filename):
+    """Resolve relative files inside the simulator's /app directory."""
+    path = Path(filename)
+    return path if path.is_absolute() else Path(__file__).resolve().parent / path
 
 
 def make_aircraft(i, rng):
@@ -38,9 +51,7 @@ def make_fleet(rng):
 
 def load_scenario(filename):
     """Load and validate aircraft from a JSON scenario file."""
-    path = Path(filename)
-    if not path.is_absolute():
-        path = Path(__file__).resolve().parent / path
+    path = resolve_path(filename)
 
     with path.open("r", encoding="utf-8") as file:
         scenario = json.load(file)
@@ -83,6 +94,7 @@ def load_scenario(filename):
 
 
 def step(ac, dt):
+    """Advance aircraft and increase its FIFO sequence number."""
     ac["seq"] = ac.get("seq", 0) + 1
     nm = ac["speed"] * dt / 3600.0
     rad = math.radians(ac["heading"])
@@ -100,34 +112,91 @@ def send(fleet):
     urllib.request.urlopen(req, timeout=2).read()
 
 
-def main():
-    if TICK <= 0:
-        raise SystemExit("TICK must be greater than zero")
+def send_safely(fleet):
+    try:
+        send(fleet)
+    except (urllib.error.URLError, OSError) as error:
+        print("gateway unreachable:", error, flush=True)
 
+
+def run_live():
+    """Generate positions and optionally record every generated frame."""
     rng = random.Random(SEED)
 
     if SCENARIO:
         try:
             fleet = load_scenario(SCENARIO)
-        except (OSError, ValueError, json.JSONDecodeError) as error:
+        except (OSError, ValueError) as error:
             raise SystemExit(f"Unable to load scenario: {error}") from error
     else:
         fleet = make_fleet(rng)
 
     print(f"simulating {len(fleet)} aircraft, tick {TICK}s -> {GATEWAY}", flush=True)
 
-    while True:
-        start = time.monotonic()
+    recorder = None
 
-        for ac in fleet:
-            step(ac, TICK)
+    try:
+        if MODE == "record":
+            path = resolve_path(RECORD_FILE)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            recorder = path.open("w", encoding="utf-8")
+            print(f"recording aircraft frames to {path}", flush=True)
 
-        try:
-            send(fleet)
-        except (urllib.error.URLError, OSError) as error:
-            print("gateway unreachable:", error, flush=True)
+        tick_number = 0
 
-        time.sleep(max(0.0, TICK - (time.monotonic() - start)))
+        while True:
+            start = time.monotonic()
+
+            for ac in fleet:
+                step(ac, TICK)
+
+            tick_number += 1
+
+            if recorder is not None:
+                record_frame(recorder, tick_number, fleet)
+
+            send_safely(fleet)
+
+            time.sleep(max(0.0, TICK - (time.monotonic() - start)))
+
+    finally:
+        if recorder is not None:
+            recorder.close()
+
+
+def run_replay():
+    """Send recorded frames without recalculating aircraft movement."""
+    path = resolve_path(REPLAY_FILE)
+    print(f"replaying aircraft frames from {path}", flush=True)
+
+    frame_count = 0
+
+    try:
+        for frame in replay_frames(path):
+            start = time.monotonic()
+
+            send_safely(frame["aircraft"])
+            frame_count += 1
+
+            time.sleep(max(0.0, TICK - (time.monotonic() - start)))
+
+    except (OSError, ValueError) as error:
+        raise SystemExit(f"Unable to replay recording: {error}") from error
+
+    print(f"replay complete: {frame_count} frames sent", flush=True)
+
+
+def main():
+    if TICK <= 0 or not math.isfinite(TICK):
+        raise SystemExit("TICK must be a positive, finite number")
+
+    if MODE not in ("live", "record", "replay"):
+        raise SystemExit("MODE must be live, record, or replay")
+
+    if MODE == "replay":
+        run_replay()
+    else:
+        run_live()
 
 
 if __name__ == "__main__":

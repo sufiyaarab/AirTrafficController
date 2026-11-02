@@ -1,0 +1,9 @@
+
+services:
+  simulator:
+    environment:
+      MODE: "record"
+      SCENARIO: "scenarios/basic_traffic.json"
+      RECORD_FILE: "recordings/traffic.jsonl"
+    volumes:
+      - ./sim/recordings:/app/recordings
