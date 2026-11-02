@@ -1,0 +1,30 @@
+
+{
+  "name": "Head-On Aircraft Conflict Test",
+  "aircraft": [
+    {
+      "callsign": "CONF001",
+      "x": 98,
+      "y": 150,
+      "alt": 30000,
+      "heading": 90,
+      "speed": 360
+    },
+    {
+      "callsign": "CONF002",
+      "x": 102,
+      "y": 150,
+      "alt": 30000,
+      "heading": 270,
+      "speed": 360
+    },
+    {
+      "callsign": "SAFE001",
+      "x": 170,
+      "y": 50,
+      "alt": 35000,
+      "heading": 180,
+      "speed": 300
+    }
+  ]
+}

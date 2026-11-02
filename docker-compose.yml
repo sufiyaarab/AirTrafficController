@@ -123,13 +123,14 @@ services:
     ports: ["8080:8080"]
     networks: [atc]
 
+
   simulator:
     build: ./sim
     environment:
       GATEWAY: http://gateway:8080
       AIRCRAFT: "100"
       TICK: "1.0"
-      SCENARIO: "scenarios/basic_traffic.json"
+      SCENARIO: ""
     depends_on: [gateway]
     networks: [atc]
 
