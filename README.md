@@ -40,6 +40,26 @@ scripts/chaos.sh delay sector-3-a 200    # 200 ms latency with tc netem
 scripts/chaos.sh clear sector-3-a
 ```
 
+## Ghost aircraft (spoofing) demo
+
+Three ground receivers measure the range to every transmitter and report it
+to the gateway, which checks it against the position each aircraft claims
+(`cmd/gateway/verify.go`). A spoofed aircraft claims a normal track but
+transmits from the spoofer's ground station, so the ranges disagree and it
+turns `SUSPECT` (red, `?` on the radar) within about 3 ticks. Clearances to a
+`SUSPECT` aircraft are refused with 409.
+
+```bash
+SCENARIO=scenarios/spoof_traffic.json docker compose up --build   # 6 real + 2 ghosts
+SPOOF=3 docker compose up --build                                  # random fleet + 3 ghosts
+docker kill atc-receiver-b-1     # coverage drops: some aircraft UNVERIFIED, none falsely SUSPECT
+docker start atc-receiver-b-1
+```
+
+Tick the "coverage" box on the dashboard to draw each receiver's 200 NM
+range. Tunables: `VERIFY_THRESHOLD_NM` (gateway, default 3),
+`RECEIVER_NOISE_NM` (receivers, default 0.5).
+
 ## Compare the mutual exclusion approaches
 
 ```bash
@@ -60,7 +80,7 @@ cmd/maekawa/       Maekawa baseline (grid voting sets, INQUIRE/FAILED/YIELD)
 internal/fsm/      replicated state machine: ownership states + key/value
 docs/              how-it-works.md: every file, the course mapping, the comparison
 proto/atc.proto    DRAFT gRPC contract (not compiled yet)
-sim/               simulator.py, receiver.py
+sim/               sim.py (live / record / replay, spoof mode), receiver.py (ground station)
 dashboard/         React + Vite radar
 deploy/            go.Dockerfile, prometheus.yml, grafana datasource
 scripts/          chaos.sh (fault injection), compare.py (Maekawa vs registry)
@@ -68,7 +88,9 @@ scripts/          chaos.sh (fault injection), compare.py (Maekawa vs registry)
 
 ## Current state and next steps
 
-Working now: all clusters elect leaders and replicate; positions reach the
+Working now: all clusters elect leaders and replicate;
+ground receivers cross-check every aircraft's claimed position and the radar
+flags spoofed aircraft, which cannot receive clearances; positions reach the
 controlling sector's replicas by B-multicast with FIFO sequence numbers;
 handoffs run in 3 phases through the registry (begin, target accepts, commit),
 abort when the target has no majority, and resume after a crash; the Maekawa
@@ -76,6 +98,6 @@ baseline and comparison script run; the radar shows aircraft (amber while
 transferring), sectors, every node's role/term, and handoff counters.
 
 - Elastic split/merge using the standby cluster, sector map in the registry (Issaq)
-- gRPC in place of HTTP/JSON, mTLS, controller login, receiver cross-check (Collins)
+- gRPC in place of HTTP/JSON, mTLS, controller login (Collins)
 - Scenario files, conflict/stress modes, replay (Mashal)
 - Safety-invariant panel, Grafana dashboards, more experiments (Chimidike)

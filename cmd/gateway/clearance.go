@@ -11,7 +11,8 @@ package main
 //  1. Take the aircraft's lock (g.inflight, the same lock the handoff worker
 //     uses), so a handoff and a clearance for one aircraft never overlap.
 //  2. Read the owner from the registry leader, not from the gateway's cache.
-//  3. Refuse if the aircraft is unclaimed or TRANSFERRING.
+//  3. Refuse if the aircraft is unclaimed or TRANSFERRING, or if ground
+//     receivers marked it SUSPECT (verify.go).
 //  4. If the owner sector is not Ready, hold the clearance in that sector's
 //     buffer (FIFO, 10 s TTL) and answer 202 "pending".
 //  5. Otherwise commit it on the owner's leader as
@@ -166,6 +167,12 @@ func (g *gateway) tryClearance(c *clearance) outcome {
 	if g.inflight[c.Callsign] {
 		g.mu.Unlock()
 		return outcome{kind: outBusy, reason: "handoff in progress"}
+	}
+	if g.ver.state(c.Callsign) == VerSuspect {
+		// Checked under the same lock as the commit path, so a buffered
+		// clearance is also refused if its aircraft turned SUSPECT while waiting.
+		g.mu.Unlock()
+		return outcome{kind: outRejected, code: http.StatusConflict, reason: c.Callsign + " failed position verification (SUSPECT)"}
 	}
 	g.inflight[c.Callsign] = true
 	g.mu.Unlock()

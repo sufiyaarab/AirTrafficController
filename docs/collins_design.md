@@ -7,6 +7,10 @@ authentication and authorization, mutual TLS, ground receivers and the
 This document describes how each piece fits into the code that already exists
 (Sufiya's scaffold, commit `d3ae8e9`) and what changes in which file. Read `docs/how-it-works.md` first; this builds on it.
 
+**Status (Nov 11):** section 3 (Ready flag and buffer), section 4
+(clearances) and section 6 (receivers and ghost detection) are implemented.
+Section 5 (login) and section 7 (gRPC and mTLS) are next.
+
 ---
 
 ## 1. What exists today (the parts I build on)
