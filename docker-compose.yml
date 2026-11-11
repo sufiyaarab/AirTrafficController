@@ -119,6 +119,11 @@ services:
     image: atc/go:dev
     command: ["atc-gateway"]
     environment:
+      # Ground receivers for ghost-aircraft detection (cmd/gateway/verify.go).
+      # Positions are configured here, not trusted from the receivers.
+      RECEIVERS: "receiver-a=20,20;receiver-b=180,40;receiver-c=100,190"
+      RECEIVER_RANGE_NM: "200"
+      VERIFY_THRESHOLD_NM: "3"
       CLUSTERS: "sector-1=sector-1-a,sector-1-b,sector-1-c;sector-2=sector-2-a,sector-2-b,sector-2-c;sector-3=sector-3-a,sector-3-b,sector-3-c;sector-4=sector-4-a,sector-4-b,sector-4-c;tower=tower-a,tower-b,tower-c;registry=registry-a,registry-b,registry-c;standby=standby-a,standby-b,standby-c"
     ports: ["8080:8080"]
     networks: [atc]
@@ -130,27 +135,35 @@ services:
       GATEWAY: http://gateway:8080
       AIRCRAFT: "100"
       TICK: "1.0"
-      SCENARIO: ""
+      SCENARIO: "${SCENARIO:-}"   # e.g. SCENARIO=scenarios/spoof_traffic.json docker compose up
+      SPOOF: "${SPOOF:-0}"        # ghost aircraft added to the random fleet
+      SPOOF_X: "100"              # where the spoofer's transmitter is, NM
+      SPOOF_Y: "20"
+      RECEIVERS: "http://receiver-a:9000,http://receiver-b:9000,http://receiver-c:9000"
     depends_on: [gateway]
     networks: [atc]
 
 
+  # --- Ground receivers: measure range to each transmitter, report to the gateway ---
   receiver-a:
     build: ./sim
     command: ["python", "receiver.py"]
-    environment: { RECEIVER_ID: receiver-a, RECEIVER_X: "20", RECEIVER_Y: "20" }
+    environment: { RECEIVER_ID: receiver-a, RECEIVER_X: "20", RECEIVER_Y: "20", RECEIVER_RANGE_NM: "200", RECEIVER_NOISE_NM: "0.5", GATEWAY: "http://gateway:8080" }
+    depends_on: [gateway]
     networks: [atc]
 
   receiver-b:
     build: ./sim
     command: ["python", "receiver.py"]
-    environment: { RECEIVER_ID: receiver-b, RECEIVER_X: "180", RECEIVER_Y: "40" }
+    environment: { RECEIVER_ID: receiver-b, RECEIVER_X: "180", RECEIVER_Y: "40", RECEIVER_RANGE_NM: "200", RECEIVER_NOISE_NM: "0.5", GATEWAY: "http://gateway:8080" }
+    depends_on: [gateway]
     networks: [atc]
 
   receiver-c:
     build: ./sim
     command: ["python", "receiver.py"]
-    environment: { RECEIVER_ID: receiver-c, RECEIVER_X: "100", RECEIVER_Y: "190" }
+    environment: { RECEIVER_ID: receiver-c, RECEIVER_X: "100", RECEIVER_Y: "190", RECEIVER_RANGE_NM: "200", RECEIVER_NOISE_NM: "0.5", GATEWAY: "http://gateway:8080" }
+    depends_on: [gateway]
     networks: [atc]
 
   dashboard:
