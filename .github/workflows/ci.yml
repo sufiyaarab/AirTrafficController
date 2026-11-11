@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  go-test:
+    name: Go unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race ./...
+
+  compose:
+    name: Docker Compose smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and start the stack
+        run: docker compose up -d --build
+
+      - name: Wait until every cluster is Ready and aircraft are flowing
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8080/api/state -o state.json && python3 - <<'EOF'
+          import json, sys
+          p = json.load(open("state.json"))
+          ready = p.get("ready") or {}
+          not_ready = [c for c, r in ready.items() if not r.get("ready")]
+          n = len(p.get("aircraft") or [])
+          print(f"clusters ready: {len(ready) - len(not_ready)}/{len(ready)}, aircraft: {n}, waiting on: {not_ready}")
+          sys.exit(0 if len(ready) == 7 and not not_ready and n > 0 else 1)
+          EOF
+            then
+              echo "Stack is healthy"; exit 0
+            fi
+            sleep 5
+          done
+          echo "Stack did not become healthy in 5 minutes"; exit 1
+
+      - name: Show containers and logs on failure
+        if: failure()
+        run: |
+          docker compose ps -a
+          docker compose logs --tail=100
+
+      - name: Shut down
+        if: always()
+        run: docker compose down -v
