@@ -7,9 +7,10 @@ authentication and authorization, mutual TLS, ground receivers and the
 This document describes how each piece fits into the code that already exists
 (Sufiya's scaffold, commit `d3ae8e9`) and what changes in which file. Read `docs/how-it-works.md` first; this builds on it.
 
-**Status (Nov 11):** section 3 (Ready flag and buffer), section 4
-(clearances) and section 6 (receivers and ghost detection) are implemented.
-Section 5 (login) and section 7 (gRPC and mTLS) are next.
+**Status (Nov 12):** sections 3 (Ready flag and buffer), 4 (clearances),
+5 (login) and 6 (receivers and ghost detection) are implemented. Not done
+from section 5: the WebSocket auth message and the X-Service-Key header
+(mTLS in section 7 replaces the latter). Section 7 is next.
 
 ---
 

@@ -124,8 +124,13 @@ services:
       RECEIVERS: "receiver-a=20,20;receiver-b=180,40;receiver-c=100,190"
       RECEIVER_RANGE_NM: "200"
       VERIFY_THRESHOLD_NM: "3"
+      # Controller login (cmd/gateway/auth.go). Demo accounts only; an empty
+      # JWT_SECRET means a random one per run (tokens die with the gateway).
+      USERS_FILE: /etc/atc/users.json
+      JWT_SECRET: "${JWT_SECRET:-}"
       CLUSTERS: "sector-1=sector-1-a,sector-1-b,sector-1-c;sector-2=sector-2-a,sector-2-b,sector-2-c;sector-3=sector-3-a,sector-3-b,sector-3-c;sector-4=sector-4-a,sector-4-b,sector-4-c;tower=tower-a,tower-b,tower-c;registry=registry-a,registry-b,registry-c;standby=standby-a,standby-b,standby-c"
     ports: ["8080:8080"]
+    volumes: ["./deploy/users.json:/etc/atc/users.json:ro"]
     networks: [atc]
 
 

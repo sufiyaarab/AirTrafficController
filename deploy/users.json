@@ -1,0 +1,14 @@
+[
+  { "username": "ctrl-sector1", "role": "controller", "sectors": ["sector-1"],
+    "bcrypt": "$2a$10$4OfhjWrUEp0M3/YKjw57suXeEgy/cg1/rFe68oH/HcMExXezfpNhi" },
+  { "username": "ctrl-sector2", "role": "controller", "sectors": ["sector-2"],
+    "bcrypt": "$2a$10$g/cGylIJGYuB64PiknU.6.yszs67Tor.EY3kBS4ZZwRBQhueeHj76" },
+  { "username": "ctrl-sector3", "role": "controller", "sectors": ["sector-3"],
+    "bcrypt": "$2a$10$o6AqnQ3DPjbT7M7g9.iKV.kP5J0hwfL9bB4AjM5Jsv/eOqDW80Z6W" },
+  { "username": "ctrl-sector4", "role": "controller", "sectors": ["sector-4"],
+    "bcrypt": "$2a$10$yJalHduea/ZJYlFXna82P.q69/AlmVGgwOaKddRw.fuFYbjHFTFFu" },
+  { "username": "ctrl-tower", "role": "controller", "sectors": ["tower"],
+    "bcrypt": "$2a$10$d8Cv6NNeRa7/vZD2Y7VDJubb.9gRJwBlIgxHBsgj8DUdWU4trPpI." },
+  { "username": "supervisor", "role": "supervisor", "sectors": [],
+    "bcrypt": "$2a$10$9LHgBmh/Z8XbUB4y/hxL9.3.a9MZI0ZddSufJB.rG7CstWrBqquwi" }
+]
