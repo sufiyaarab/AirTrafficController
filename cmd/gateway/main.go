@@ -98,6 +98,8 @@ type gateway struct {
 	ready    map[string]readiness           // cluster -> Ready flag (ready.go)
 	clr      clearanceState                 // clearance buffer and history (clearance.go)
 	ver      *verifier                      // ghost-aircraft detection, nil if off (verify.go)
+	auth     *authenticator                 // controller login, nil if off (auth.go)
+	sec      securityStats
 	st       stats
 }
 
@@ -115,6 +117,7 @@ func main() {
 		inflight: map[string]bool{},
 		ready:    map[string]readiness{},
 		ver:      verifierFromEnv(),
+		auth:     authFromEnv(),
 	}
 	for c, ids := range g.clusters {
 		if c == "registry" {
@@ -145,6 +148,7 @@ func main() {
 		json.NewEncoder(w).Encode(g.snapshot())
 	})
 	mux.HandleFunc("GET /ws", g.ws)
+	mux.HandleFunc("POST /api/login", g.loginHandler)
 	mux.HandleFunc("POST /api/clearance", g.clearanceHandler)
 	mux.HandleFunc("POST /api/observations", g.observationsHandler)
 	addr := envOr("HTTP_ADDR", ":8080")
@@ -504,6 +508,9 @@ type picture struct {
 	Receivers []receiver   `json:"receivers,omitempty"` // ground stations and whether they report
 	Alerts    []alert      `json:"alerts"`              // aircraft currently SUSPECT
 	Verify    *verifyStats `json:"verify,omitempty"`
+
+	Security securityStats `json:"security"` // logins and refused clearances (auth.go)
+	AuthOn   bool          `json:"auth"`     // whether clearances need a login
 }
 
 func (g *gateway) snapshot() picture {
@@ -517,6 +524,7 @@ func (g *gateway) snapshot() picture {
 	pic.ClearanceStats = g.clr.st
 	pic.Receivers = g.ver.receiverSnapshot()
 	pic.Alerts = g.ver.alerts()
+	pic.Security, pic.AuthOn = g.sec, g.auth != nil
 	if g.ver != nil {
 		st := g.ver.st
 		pic.Verify = &st

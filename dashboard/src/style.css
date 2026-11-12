@@ -12,10 +12,10 @@ td { padding: 2px 6px; border-bottom: 1px solid #1f3a2a; }
 .ready { color: #7fd69a; font-weight: normal; }
 .notready { color: #ff6b6b; font-weight: bold; }
 .hint { color: #5fa57a; font-size: 12px; margin: 4px 0; }
-.clearance-form .row { display: flex; gap: 6px; margin: 6px 0; flex-wrap: wrap; align-items: center; }
-.clearance-form input { background: #06100b; color: #b8f5c8; border: 1px solid #1f5a3a; padding: 4px 6px; font: inherit; flex: 1; min-width: 120px; }
-.clearance-form button { background: #12301f; color: #b8f5c8; border: 1px solid #1f5a3a; padding: 4px 8px; font: inherit; cursor: pointer; }
-.clearance-form button:disabled { opacity: 0.4; cursor: default; }
+.clearance-form .row, .login .row { display: flex; gap: 6px; margin: 6px 0; flex-wrap: wrap; align-items: center; }
+.clearance-form input, .login input { background: #06100b; color: #b8f5c8; border: 1px solid #1f5a3a; padding: 4px 6px; font: inherit; flex: 1; min-width: 120px; }
+.clearance-form button, .login button { background: #12301f; color: #b8f5c8; border: 1px solid #1f5a3a; padding: 4px 8px; font: inherit; cursor: pointer; }
+.clearance-form button:disabled, .login button:disabled { opacity: 0.4; cursor: default; }
 .clearance-form .presets button { font-size: 11px; }
 .result { padding: 4px 6px; margin-top: 6px; border: 1px solid #1f3a2a; }
 .committed { color: #b8f5c8; }

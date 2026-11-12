@@ -109,22 +109,95 @@ function Radar({ pic, selected, onSelect, coverage }) {
 
 const PRESETS = ['CLIMB FL350', 'DESCEND FL250', 'HEADING 090', 'HEADING 270', 'REDUCE SPEED 250']
 
-// Clearance form for the selected aircraft. Login comes in the next step;
-// until then the controller name is just a text field.
-function ClearanceForm({ pic, selected }) {
+// Controller login. The token lives only in React state (not localStorage),
+// so reloading the page logs out; fine for a demo, and nothing for another
+// script on the page to steal later.
+function Login({ pic, session, setSession }) {
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState(null)
+  if (!pic?.auth) return null // gateway runs with AUTH=off
+
+  const sec = pic.security
+  const counters = sec && <div className="hint">
+    {sec.logins} logins · {sec.failed_logins} failed · {sec.unauthorized} refused (no login) · {sec.forbidden} refused (wrong sector)
+  </div>
+
+  if (session) {
+    const mins = Math.max(0, Math.round((session.expires_at_ms - (pic.time ?? Date.now())) / 60000))
+    return (
+      <div className="login">
+        <h2>controller</h2>
+        <div className="row">
+          <span>{session.username} · {session.role} · {session.role === 'supervisor' ? 'all sectors' : session.sectors.join(', ')} · {mins} min left</span>
+          <button onClick={() => setSession(null)}>Log out</button>
+        </div>
+        {counters}
+      </div>
+    )
+  }
+
+  const submit = async (e) => {
+    e.preventDefault()
+    setError(null)
+    try {
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      })
+      const body = await res.json()
+      if (!res.ok) { setError(body.error ?? `login failed (${res.status})`); return }
+      setPassword('')
+      setSession(body)
+    } catch (err) {
+      setError(`gateway unreachable: ${err.message}`)
+    }
+  }
+  return (
+    <form className="login" onSubmit={submit}>
+      <h2>controller login</h2>
+      <div className="row">
+        <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="username" autoComplete="username" />
+        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="password" autoComplete="current-password" />
+        <button type="submit" disabled={!username || !password}>Log in</button>
+      </div>
+      {error && <div className="result rejected">{error}</div>}
+      {counters}
+    </form>
+  )
+}
+
+// Why the logged-in controller cannot clear this aircraft, or null. The
+// gateway enforces all of these anyway; this only says why up front.
+function blockedReason(pic, ac, session) {
+  if (ac?.verify === 'SUSPECT') return 'failed position verification (SUSPECT)'
+  if (!pic?.auth) return null
+  if (!session) return 'log in to issue clearances'
+  if (session.role !== 'supervisor' && ac?.owner && !session.sectors.includes(ac.owner)) {
+    return `controlled by ${ac.owner}, not one of your sectors`
+  }
+  return null
+}
+
+// Clearance form for the selected aircraft.
+function ClearanceForm({ pic, selected, session, setSession }) {
   const [instruction, setInstruction] = useState('')
-  const [issuedBy, setIssuedBy] = useState('ctrl-demo')
+  const [issuedBy, setIssuedBy] = useState('ctrl-demo') // only used while login is off
   const [result, setResult] = useState(null)
   const ac = (pic?.aircraft ?? []).find((a) => a.callsign === selected)
 
   const send = async (text) => {
     setResult({ status: 'sending' })
+    const headers = { 'Content-Type': 'application/json' }
+    if (session) headers.Authorization = `Bearer ${session.token}`
     try {
       const res = await fetch('/api/clearance', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ callsign: selected, instruction: text, issued_by: issuedBy }),
       })
+      if (res.status === 401) setSession(null) // token expired or gateway restarted: log in again
       setResult(await res.json())
     } catch (err) {
       setResult({ status: 'rejected', reason: `gateway unreachable: ${err.message}` })
@@ -132,8 +205,7 @@ function ClearanceForm({ pic, selected }) {
   }
 
   if (!selected) return <div className="hint">Click an aircraft on the radar to issue a clearance.</div>
-  // The gateway refuses these anyway (409); disabling the buttons just says why up front.
-  const blocked = ac?.verify === 'SUSPECT' ? 'failed position verification (SUSPECT)' : null
+  const blocked = blockedReason(pic, ac, session)
   return (
     <div className="clearance-form">
       <h2>clearance · {selected}</h2>
@@ -150,9 +222,9 @@ function ClearanceForm({ pic, selected }) {
       <div className="row presets">
         {PRESETS.map((p) => <button key={p} onClick={() => send(p)} disabled={!!blocked}>{p}</button>)}
       </div>
-      <div className="row">
+      {!pic?.auth && <div className="row">
         <label>controller <input value={issuedBy} onChange={(e) => setIssuedBy(e.target.value)} /></label>
-      </div>
+      </div>}
       {result && <div className={`result ${result.status}`}>{describe(result)}</div>}
     </div>
   )
@@ -269,13 +341,19 @@ export default function App() {
   const [pic, connected] = usePicture()
   const [selected, setSelected] = useState(null)
   const [coverage, setCoverage] = useState(false)
+  const [session, setSession] = useState(null) // login response: token, username, role, sectors
+  // Drop the session once the token has expired, rather than waiting for a 401.
+  useEffect(() => {
+    if (session && pic?.time > session.expires_at_ms) setSession(null)
+  }, [pic, session])
   return (
     <div className="layout">
       <Radar pic={pic} selected={selected} onSelect={setSelected} coverage={coverage} />
       <div className="side">
         <h1>Air Traffic Controller but Different</h1>
         <div className="status">{connected ? 'live' : 'connecting to gateway...'} · {pic?.aircraft?.length ?? 0} aircraft</div>
-        <ClearanceForm pic={pic} selected={selected} />
+        <Login pic={pic} session={session} setSession={setSession} />
+        <ClearanceForm pic={pic} selected={selected} session={session} setSession={setSession} />
         <Alerts pic={pic} coverage={coverage} setCoverage={setCoverage} onSelect={setSelected} />
         <Clearances pic={pic} />
         <Handoffs pic={pic} />

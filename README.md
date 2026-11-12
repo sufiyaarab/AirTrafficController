@@ -40,6 +40,30 @@ scripts/chaos.sh delay sector-3-a 200    # 200 ms latency with tc netem
 scripts/chaos.sh clear sector-3-a
 ```
 
+## Controller login
+
+Watching the radar is open to everyone. Issuing a clearance needs a login: a
+controller can only clear aircraft in its own sectors, a supervisor any
+sector (`cmd/gateway/auth.go`). Demo accounts in `deploy/users.json`:
+
+| Username | Password | Can clear |
+|---|---|---|
+| `ctrl-sector1` ... `ctrl-sector4` | `sector1-demo` ... `sector4-demo` | its sector |
+| `ctrl-tower` | `tower-demo` | tower |
+| `supervisor` | `supervisor-demo` | all sectors |
+
+Demo passwords only. The file holds bcrypt hashes, never passwords; make a
+new one with `echo -n 'new-password' | go run ./cmd/hashpw`.
+
+```bash
+TOKEN=$(curl -s localhost:8080/api/login -d '{"username":"ctrl-sector1","password":"sector1-demo"}' | jq -r .token)
+curl -s localhost:8080/api/clearance -H "Authorization: Bearer $TOKEN" -d '{"callsign":"ATC001","instruction":"CLIMB FL350"}'
+```
+
+Without a token the clearance is refused with 401; for an aircraft in another
+sector, 403. Tokens expire after 30 minutes. Set `JWT_SECRET` (32+ bytes) to
+keep tokens valid across gateway restarts; `AUTH=off` turns login off.
+
 ## Ghost aircraft (spoofing) demo
 
 Three ground receivers measure the range to every transmitter and report it
@@ -89,6 +113,7 @@ scripts/          chaos.sh (fault injection), compare.py (Maekawa vs registry)
 ## Current state and next steps
 
 Working now: all clusters elect leaders and replicate;
+clearances need a controller login and are limited to the controller's sectors;
 ground receivers cross-check every aircraft's claimed position and the radar
 flags spoofed aircraft, which cannot receive clearances; positions reach the
 controlling sector's replicas by B-multicast with FIFO sequence numbers;
@@ -98,6 +123,6 @@ baseline and comparison script run; the radar shows aircraft (amber while
 transferring), sectors, every node's role/term, and handoff counters.
 
 - Elastic split/merge using the standby cluster, sector map in the registry (Issaq)
-- gRPC in place of HTTP/JSON, mTLS, controller login (Collins)
+- gRPC in place of HTTP/JSON, mTLS (Collins)
 - Scenario files, conflict/stress modes, replay (Mashal)
 - Safety-invariant panel, Grafana dashboards, more experiments (Chimidike)
