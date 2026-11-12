@@ -25,7 +25,17 @@ function usePicture() {
   return [pic, connected]
 }
 
-function Radar({ pic, selected, onSelect }) {
+// Aircraft colour: red for SUSPECT (failed the receiver cross-check), amber
+// while TRANSFERRING, grey while UNVERIFIED (not enough receiver coverage
+// yet), otherwise green.
+function aircraftColor(ac) {
+  if (ac.verify === 'SUSPECT') return '#ff4d4d'
+  if (ac.status === 'TRANSFERRING') return '#ffb000'
+  if (ac.verify === 'UNVERIFIED') return '#8a9a90'
+  return '#b8f5c8'
+}
+
+function Radar({ pic, selected, onSelect, coverage }) {
   const ref = useRef(null)
   useEffect(() => {
     const ctx = ref.current.getContext('2d')
@@ -45,24 +55,40 @@ function Radar({ pic, selected, onSelect }) {
     ctx.arc(100 * s, toY(100), 15 * s, 0, 2 * Math.PI)
     ctx.stroke()
 
+    // Ground receivers: triangles, grey when the gateway stopped hearing them.
+    for (const rx of pic?.receivers ?? []) {
+      const x = rx.x * s, y = toY(rx.y)
+      const color = rx.up ? '#4fc3f7' : '#666'
+      if (coverage) {
+        ctx.strokeStyle = rx.up ? 'rgba(79,195,247,0.25)' : 'rgba(120,120,120,0.2)'
+        ctx.setLineDash([4, 4])
+        ctx.beginPath(); ctx.arc(x, y, rx.range * s, 0, 2 * Math.PI); ctx.stroke()
+        ctx.setLineDash([])
+      }
+      ctx.fillStyle = color
+      ctx.beginPath(); ctx.moveTo(x, y - 7); ctx.lineTo(x - 6, y + 5); ctx.lineTo(x + 6, y + 5); ctx.closePath(); ctx.fill()
+      const label = rx.up ? rx.id : `${rx.id} DOWN`
+      const w = ctx.measureText(label).width
+      ctx.fillText(label, x + 8 + w > PX ? x - 8 - w : x + 8, y + 4) // keep labels on the canvas
+    }
+
     for (const ac of pic?.aircraft ?? []) {
       const x = ac.x * s, y = toY(ac.y)
-      // amber while the registry says TRANSFERRING, otherwise green
-      const color = ac.status === 'TRANSFERRING' ? '#ffb000' : '#b8f5c8'
+      const color = aircraftColor(ac)
       ctx.fillStyle = color
       ctx.fillRect(x - 2, y - 2, 4, 4)
       const r = (ac.heading * Math.PI) / 180 // velocity leader line
       ctx.strokeStyle = color
       ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 10 * Math.sin(r), y - 10 * Math.cos(r)); ctx.stroke()
-      ctx.fillStyle = '#7fd69a'
-      ctx.fillText(`${ac.callsign} ${Math.round(ac.alt / 100)}`, x + 5, y - 5)
+      ctx.fillStyle = ac.verify === 'SUSPECT' ? '#ff4d4d' : '#7fd69a'
+      ctx.fillText(`${ac.callsign}${ac.verify === 'SUSPECT' ? '?' : ''} ${Math.round(ac.alt / 100)}`, x + 5, y - 5)
       if (ac.callsign === selected) { // ring around the aircraft being cleared
         ctx.strokeStyle = '#ffffff'
         ctx.beginPath(); ctx.arc(x, y, 9, 0, 2 * Math.PI); ctx.stroke()
       }
       ctx.strokeStyle = '#1f5a3a'
     }
-  }, [pic, selected])
+  }, [pic, selected, coverage])
 
   // Click selects the nearest aircraft within 12 px. The canvas can be shown
   // smaller than PX (max-width: 100%), so scale the click back to canvas pixels.
@@ -106,20 +132,23 @@ function ClearanceForm({ pic, selected }) {
   }
 
   if (!selected) return <div className="hint">Click an aircraft on the radar to issue a clearance.</div>
+  // The gateway refuses these anyway (409); disabling the buttons just says why up front.
+  const blocked = ac?.verify === 'SUSPECT' ? 'failed position verification (SUSPECT)' : null
   return (
     <div className="clearance-form">
       <h2>clearance · {selected}</h2>
       {ac
-        ? <div className="hint">owner {ac.owner || '-'} · {ac.status || 'unclaimed'} · FL{Math.round(ac.alt / 100)} · hdg {Math.round(ac.heading)}</div>
+        ? <div className="hint">owner {ac.owner || '-'} · {ac.status || 'unclaimed'} · FL{Math.round(ac.alt / 100)} · hdg {Math.round(ac.heading)}{ac.verify ? ` · ${ac.verify}` : ''}</div>
         : <div className="hint">aircraft no longer on the radar</div>}
+      {blocked && <div className="result rejected">clearances blocked: {blocked}</div>}
       <div className="row">
         <input value={instruction} onChange={(e) => setInstruction(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && instruction.trim() && send(instruction)}
           placeholder="e.g. DESCEND FL250" maxLength={64} />
-        <button onClick={() => send(instruction)} disabled={!instruction.trim()}>Send</button>
+        <button onClick={() => send(instruction)} disabled={!instruction.trim() || !!blocked}>Send</button>
       </div>
       <div className="row presets">
-        {PRESETS.map((p) => <button key={p} onClick={() => send(p)}>{p}</button>)}
+        {PRESETS.map((p) => <button key={p} onClick={() => send(p)} disabled={!!blocked}>{p}</button>)}
       </div>
       <div className="row">
         <label>controller <input value={issuedBy} onChange={(e) => setIssuedBy(e.target.value)} /></label>
@@ -160,6 +189,36 @@ function Clearances({ pic }) {
           </tr>
         ))}
       </tbody></table>
+    </div>
+  )
+}
+
+// Spoofed-aircraft alerts: aircraft whose claimed position disagrees with
+// the ranges the ground receivers measured (gateway verify.go).
+function Alerts({ pic, coverage, setCoverage, onSelect }) {
+  const v = pic?.verify
+  if (!v) return null // verification off (no receivers configured)
+  const alerts = pic.alerts ?? []
+  const counts = { VERIFIED: 0, UNVERIFIED: 0, SUSPECT: 0 }
+  for (const a of pic.aircraft ?? []) counts[a.verify] = (counts[a.verify] ?? 0) + 1
+  const rxs = pic.receivers ?? []
+  return (
+    <div>
+      <h2>position verification {alerts.length > 0 && <span className="notready">{alerts.length} SUSPECT</span>}</h2>
+      <div className="hint">
+        {counts.VERIFIED} verified · {counts.UNVERIFIED} unverified · {counts.SUSPECT} suspect ·
+        receivers {rxs.filter((r) => r.up).length}/{rxs.length} up ·{' '}
+        <label><input type="checkbox" checked={coverage} onChange={(e) => setCoverage(e.target.checked)} /> coverage</label>
+      </div>
+      {alerts.length > 0 && <table><tbody>
+        {alerts.map((a) => (
+          <tr key={a.callsign} className="rejected" onClick={() => onSelect(a.callsign)} style={{ cursor: 'pointer' }}>
+            <td>{a.callsign}?</td>
+            <td>{a.reason}</td>
+            <td>{((Date.now() - a.since_ms) / 1000).toFixed(0)}s</td>
+          </tr>
+        ))}
+      </tbody></table>}
     </div>
   )
 }
@@ -209,16 +268,18 @@ function Handoffs({ pic }) {
 export default function App() {
   const [pic, connected] = usePicture()
   const [selected, setSelected] = useState(null)
+  const [coverage, setCoverage] = useState(false)
   return (
     <div className="layout">
-      <Radar pic={pic} selected={selected} onSelect={setSelected} />
+      <Radar pic={pic} selected={selected} onSelect={setSelected} coverage={coverage} />
       <div className="side">
         <h1>Air Traffic Controller but Different</h1>
         <div className="status">{connected ? 'live' : 'connecting to gateway...'} · {pic?.aircraft?.length ?? 0} aircraft</div>
         <ClearanceForm pic={pic} selected={selected} />
+        <Alerts pic={pic} coverage={coverage} setCoverage={setCoverage} onSelect={setSelected} />
         <Clearances pic={pic} />
         <Handoffs pic={pic} />
-        {/* TODO: live safety-invariant panel and spoofed-aircraft alerts go here */}
+        {/* TODO: live safety-invariant panel goes here */}
         <Clusters pic={pic} />
       </div>
     </div>
