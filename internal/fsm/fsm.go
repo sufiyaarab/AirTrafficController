@@ -1,12 +1,14 @@
 // Package fsm is the replicated state machine that every Raft cluster
 // (sector, tower, registry) runs. Each committed log entry is a Command.
 //
-// Two kinds of state live here:
+// Three kinds of state live here:
 //   - a generic key/value map ("set", "delete"), used for clearances and for a
 //     target sector's "accept" record during a handoff;
 //   - flight ownership ("claim", "begin", "commit", "abort"), used by the
 //     airspace registry. This is the mutual exclusion: only the sector named in
-//     an ACTIVE record may control that flight.
+//     an ACTIVE record may control that flight;
+//   - the sector map ("sector_init", "split", "drain", "undrain", "merge"), also
+//     used by the airspace registry. See sectors.go.
 package fsm
 
 import (
@@ -21,7 +23,7 @@ import (
 // Command is one entry in the Raft log.
 type Command struct {
 	Op    string          `json:"op"`
-	Key   string          `json:"key"`   // flight callsign for ownership ops
+	Key   string          `json:"key"`   // flight callsign for ownership ops, sector name for sector ops
 	Value json.RawMessage `json:"value"` // op-specific payload
 }
 
@@ -49,17 +51,24 @@ type Move struct {
 // FSM holds the committed state. Reads are local and may be stale on
 // followers; route reads that must be linearizable through the leader.
 type FSM struct {
-	mu     sync.RWMutex
-	state  map[string]json.RawMessage
-	owners map[string]Owner
+	mu      sync.RWMutex
+	state   map[string]json.RawMessage
+	owners  map[string]Owner
+	sectors map[string]Sector // sector map, registry only (see sectors.go)
+	mapVer  uint64            // log index of the last sector-map change
 }
 
 func New() *FSM {
-	return &FSM{state: map[string]json.RawMessage{}, owners: map[string]Owner{}}
+	return &FSM{
+		state:   map[string]json.RawMessage{},
+		owners:  map[string]Owner{},
+		sectors: map[string]Sector{},
+	}
 }
 
 // Apply returns either an error (the command was committed but rejected, and
-// changed nothing) or the resulting Owner for ownership ops.
+// changed nothing) or the resulting Owner for ownership ops, or the resulting
+// SectorMap for sector ops.
 func (f *FSM) Apply(l *raft.Log) interface{} {
 	var c Command
 	if err := json.Unmarshal(l.Data, &c); err != nil {
@@ -74,6 +83,8 @@ func (f *FSM) Apply(l *raft.Log) interface{} {
 	case "delete":
 		delete(f.state, c.Key)
 		return nil
+	case "sector_init", "split", "drain", "undrain", "merge":
+		return f.applySector(l, c)
 	}
 
 	var m Move
@@ -87,10 +98,16 @@ func (f *FSM) Apply(l *raft.Log) interface{} {
 		if owned {
 			return fmt.Errorf("%s already owned by %s", c.Key, cur.Sector)
 		}
+		if err := f.canReceive(m.To); err != nil {
+			return err
+		}
 		next = Owner{Callsign: c.Key, Status: Active, Sector: m.To}
 	case "begin": // phase 1: ACTIVE(from) -> TRANSFERRING(from -> to)
 		if !owned || cur.Status != Active || cur.Sector != m.From {
 			return fmt.Errorf("cannot begin %s %s->%s: %+v", c.Key, m.From, m.To, cur)
+		}
+		if err := f.canReceive(m.To); err != nil {
+			return err
 		}
 		next.Status, next.Target = Transferring, m.To
 	case "accept": // phase 2, committed in the TARGET sector's own log
@@ -137,12 +154,20 @@ func (f *FSM) Owners() map[string]Owner {
 }
 
 type snapshotData struct {
-	State  map[string]json.RawMessage `json:"state"`
-	Owners map[string]Owner           `json:"owners"`
+	State      map[string]json.RawMessage `json:"state"`
+	Owners     map[string]Owner           `json:"owners"`
+	Sectors    map[string]Sector          `json:"sectors"`    // absent in snapshots written before the sector map existed
+	MapVersion uint64                     `json:"mapVersion"` // ditto
 }
 
 func (f *FSM) Snapshot() (raft.FSMSnapshot, error) {
-	return &snapshot{snapshotData{State: f.All(), Owners: f.Owners()}}, nil
+	sm := f.Sectors()
+	return &snapshot{snapshotData{
+		State:      f.All(),
+		Owners:     f.Owners(),
+		Sectors:    sm.Sectors,
+		MapVersion: sm.Version,
+	}}, nil
 }
 
 func (f *FSM) Restore(rc io.ReadCloser) error {
@@ -157,8 +182,11 @@ func (f *FSM) Restore(rc io.ReadCloser) error {
 	if d.Owners == nil {
 		d.Owners = map[string]Owner{}
 	}
+	if d.Sectors == nil {
+		d.Sectors = map[string]Sector{}
+	}
 	f.mu.Lock()
-	f.state, f.owners = d.State, d.Owners
+	f.state, f.owners, f.sectors, f.mapVer = d.State, d.Owners, d.Sectors, d.MapVersion
 	f.mu.Unlock()
 	return nil
 }
