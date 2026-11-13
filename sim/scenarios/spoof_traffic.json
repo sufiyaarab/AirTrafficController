@@ -1,0 +1,16 @@
+{
+  "name": "Spoofed (ghost) aircraft",
+  "description": "Six real flights and two ghosts. Each ghost claims a normal flight track, but its radio is the spoofer's ground station at (100, 20) NM, so the ground receivers measure ranges that disagree with the claimed position. Both ghosts should turn SUSPECT within a few seconds; the real flights should not.",
+  "aircraft": [
+    { "callsign": "ATC101", "x": 30,  "y": 160, "alt": 33000, "heading": 90,  "speed": 420 },
+    { "callsign": "ATC102", "x": 150, "y": 170, "alt": 29000, "heading": 200, "speed": 380 },
+    { "callsign": "ATC103", "x": 40,  "y": 40,  "alt": 12000, "heading": 45,  "speed": 300 },
+    { "callsign": "ATC104", "x": 170, "y": 30,  "alt": 36000, "heading": 300, "speed": 460 },
+    { "callsign": "ATC105", "x": 95,  "y": 110, "alt": 8000,  "heading": 180, "speed": 220 },
+    { "callsign": "ATC106", "x": 120, "y": 60,  "alt": 25000, "heading": 0,   "speed": 400 },
+    { "callsign": "GHOST01", "x": 60, "y": 130, "alt": 31000, "heading": 120, "speed": 410,
+      "emitter": { "x": 100, "y": 20 } },
+    { "callsign": "GHOST02", "x": 160, "y": 120, "alt": 27000, "heading": 270, "speed": 390,
+      "emitter": { "x": 100, "y": 20 } }
+  ]
+}

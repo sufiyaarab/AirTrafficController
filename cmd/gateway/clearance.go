@@ -11,7 +11,9 @@ package main
 //  1. Take the aircraft's lock (g.inflight, the same lock the handoff worker
 //     uses), so a handoff and a clearance for one aircraft never overlap.
 //  2. Read the owner from the registry leader, not from the gateway's cache.
-//  3. Refuse if the aircraft is unclaimed or TRANSFERRING.
+//  3. Refuse if the aircraft is unclaimed or TRANSFERRING, if ground
+//     receivers marked it SUSPECT (verify.go), or if its owner sector is not
+//     one the issuing controller may clear (auth.go).
 //  4. If the owner sector is not Ready, hold the clearance in that sector's
 //     buffer (FIFO, 10 s TTL) and answer 202 "pending".
 //  5. Otherwise commit it on the owner's leader as
@@ -70,6 +72,8 @@ type clearance struct {
 	Index       uint64 `json:"index,omitempty"`      // Raft log index once committed
 	CreatedMs   int64  `json:"created_ms"`
 	UpdatedMs   int64  `json:"updated_ms"`
+
+	scope *scope // what the issuer may clear (auth.go); nil while login is off
 }
 
 type clearanceStats struct {
@@ -167,6 +171,12 @@ func (g *gateway) tryClearance(c *clearance) outcome {
 		g.mu.Unlock()
 		return outcome{kind: outBusy, reason: "handoff in progress"}
 	}
+	if g.ver.state(c.Callsign) == VerSuspect {
+		// Checked under the same lock as the commit path, so a buffered
+		// clearance is also refused if its aircraft turned SUSPECT while waiting.
+		g.mu.Unlock()
+		return outcome{kind: outRejected, code: http.StatusConflict, reason: c.Callsign + " failed position verification (SUSPECT)"}
+	}
 	g.inflight[c.Callsign] = true
 	g.mu.Unlock()
 	defer func() {
@@ -190,6 +200,12 @@ func (g *gateway) tryClearance(c *clearance) outcome {
 			reason: fmt.Sprintf("ownership changed while pending: %s -> %s", c.Sector, o.Sector)}
 	}
 	sector := o.Sector
+	if !c.scope.allows(sector) {
+		// Checked against the registry's answer, not the radar picture, and
+		// again on every flush of a buffered clearance.
+		return outcome{kind: outRejected, code: http.StatusForbidden,
+			reason: fmt.Sprintf("%s is controlled by %s, not one of your sectors", c.Callsign, sector)}
+	}
 
 	g.mu.Lock()
 	ready := g.readyLocked(o.Sector, time.Now())
@@ -277,23 +293,35 @@ func (g *gateway) applyCommand(cluster string, cmd fsm.Command) (uint64, error) 
 type clearanceRequest struct {
 	Callsign    string `json:"callsign"`
 	Instruction string `json:"instruction"`
-	IssuedBy    string `json:"issued_by"` // until login exists; then taken from the token
+	IssuedBy    string `json:"issued_by"` // only used while login is off; otherwise the token's user
 }
 
 // clearanceHandler: POST /api/clearance
 //
-//	200 committed   202 pending   400 bad input   404 unclaimed
-//	409 busy or ownership changed   503 buffer full
+//	200 committed   202 pending   400 bad input   401 not logged in
+//	403 not your sector   404 unclaimed   409 busy or ownership changed
+//	503 buffer full
 func (g *gateway) clearanceHandler(w http.ResponseWriter, r *http.Request) {
+	who, ok := g.authenticate(w, r)
+	if !ok {
+		return
+	}
 	var req clearanceRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad JSON: "+err.Error())
 		return
 	}
+	if who != nil {
+		// The issuer is whoever the token says, not what the client typed.
+		req.IssuedBy = who.Subject
+	}
 	c, err := newClearance(req, time.Now())
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
+	}
+	if who != nil {
+		c.scope = &scope{role: who.Role, sectors: who.Sectors}
 	}
 
 	out := g.tryClearance(c)
@@ -313,6 +341,9 @@ func (g *gateway) clearanceHandler(w http.ResponseWriter, r *http.Request) {
 	case outRejected:
 		c.Status, c.Reason, code = ClrRejected, out.reason, out.code
 		g.clr.st.Rejected++
+		if code == http.StatusForbidden {
+			g.sec.Forbidden++
+		}
 	case outBusy:
 		// A handoff finishes in milliseconds; the controller retries.
 		c.Status, c.Reason, code = ClrRejected, out.reason+", try again", http.StatusConflict
@@ -430,6 +461,9 @@ func (g *gateway) flushQueue(cluster string) {
 		case outRejected:
 			c.Status, c.Reason, c.WaitingOn = ClrRejected, out.reason, ""
 			g.clr.st.Rejected++
+			if out.code == http.StatusForbidden {
+				g.sec.Forbidden++
+			}
 		case outNotReady: // now blocked on a different cluster: move it there
 			if err := g.clr.push(out.cluster, c); err != nil {
 				c.Status, c.Reason, c.WaitingOn = ClrRejected, err.Error(), ""

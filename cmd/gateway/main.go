@@ -51,6 +51,8 @@ type position struct {
 	Sector   string  `json:"sector"` // sector the aircraft is physically in
 	Owner    string  `json:"owner"`  // sector that controls it, per the registry
 	Status   string  `json:"status"` // ACTIVE / TRANSFERRING, per the registry
+	// VERIFIED / UNVERIFIED / SUSPECT from the ground receivers (verify.go)
+	Verify string `json:"verify,omitempty"`
 }
 
 type sector struct {
@@ -95,6 +97,9 @@ type gateway struct {
 	inflight map[string]bool                // callsigns with a job queued or running
 	ready    map[string]readiness           // cluster -> Ready flag (ready.go)
 	clr      clearanceState                 // clearance buffer and history (clearance.go)
+	ver      *verifier                      // ghost-aircraft detection, nil if off (verify.go)
+	auth     *authenticator                 // controller login, nil if off (auth.go)
+	sec      securityStats
 	st       stats
 }
 
@@ -111,6 +116,8 @@ func main() {
 		owners:   map[string]fsm.Owner{},
 		inflight: map[string]bool{},
 		ready:    map[string]readiness{},
+		ver:      verifierFromEnv(),
+		auth:     authFromEnv(),
 	}
 	for c, ids := range g.clusters {
 		if c == "registry" {
@@ -125,6 +132,9 @@ func main() {
 	go g.pollLoop()
 	go g.flushLoop()
 	go g.clearanceLoop()
+	if g.ver != nil {
+		go g.verifyLoop()
+	}
 	for range 4 {
 		go g.worker()
 	}
@@ -138,7 +148,9 @@ func main() {
 		json.NewEncoder(w).Encode(g.snapshot())
 	})
 	mux.HandleFunc("GET /ws", g.ws)
+	mux.HandleFunc("POST /api/login", g.loginHandler)
 	mux.HandleFunc("POST /api/clearance", g.clearanceHandler)
+	mux.HandleFunc("POST /api/observations", g.observationsHandler)
 	addr := envOr("HTTP_ADDR", ":8080")
 	log.Printf("gateway on %s, clusters=%v", addr, g.clusters)
 	log.Fatal(http.ListenAndServe(addr, mux))
@@ -224,6 +236,7 @@ func (g *gateway) accept(p position) {
 		p.Owner, p.Status = o.Sector, o.Status
 	}
 	g.aircraft[p.Callsign] = p
+	g.ver.claim(p, time.Now())
 	if p.Owner != "" {
 		if g.outbox[p.Owner] == nil {
 			g.outbox[p.Owner] = map[string]position{}
@@ -491,6 +504,13 @@ type picture struct {
 	Clearances      []clearance    `json:"clearances"`       // recent, newest first
 	ClearanceQueues map[string]int `json:"clearance_queues"` // cluster -> buffered count
 	ClearanceStats  clearanceStats `json:"clearance_stats"`
+
+	Receivers []receiver   `json:"receivers,omitempty"` // ground stations and whether they report
+	Alerts    []alert      `json:"alerts"`              // aircraft currently SUSPECT
+	Verify    *verifyStats `json:"verify,omitempty"`
+
+	Security securityStats `json:"security"` // logins and refused clearances (auth.go)
+	AuthOn   bool          `json:"auth"`     // whether clearances need a login
 }
 
 func (g *gateway) snapshot() picture {
@@ -502,12 +522,20 @@ func (g *gateway) snapshot() picture {
 	pic.Clearances = g.clearanceSnapshotLocked()
 	pic.ClearanceQueues = g.clr.queued()
 	pic.ClearanceStats = g.clr.st
+	pic.Receivers = g.ver.receiverSnapshot()
+	pic.Alerts = g.ver.alerts()
+	pic.Security, pic.AuthOn = g.sec, g.auth != nil
+	if g.ver != nil {
+		st := g.ver.st
+		pic.Verify = &st
+	}
 	for c, ids := range g.clusters {
 		for _, id := range ids {
 			pic.Clusters[c] = append(pic.Clusters[c], g.nodes[id])
 		}
 	}
 	for _, p := range g.aircraft {
+		p.Verify = g.ver.state(p.Callsign)
 		pic.Aircraft = append(pic.Aircraft, p)
 	}
 	return pic
