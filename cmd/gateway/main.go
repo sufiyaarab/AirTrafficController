@@ -8,8 +8,9 @@
 //     half-done (for example after a gateway restart), and
 //   - pushes a live picture to the dashboard over a WebSocket.
 //
-// The sector map is static here. Once the registry holds the versioned
-// sector map, geoSector should read it from the registry instead.
+// The sector map is the registry's (internal/fsm/sectors.go). The gateway reads
+// it every poll and routes by it, and elastic.go splits and merges sectors as
+// traffic changes.
 package main
 
 import (
@@ -23,6 +24,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"atc/internal/fsm"
@@ -58,7 +60,10 @@ type position struct {
 type sector struct {
 	Name       string     `json:"name"`
 	X, Y, W, H float64    `json:"-"`
-	Box        [4]float64 `json:"box"` // x, y, w, h for the dashboard
+	Box        [4]float64 `json:"box"`    // x, y, w, h for the dashboard
+	Status     string     `json:"status"` // ACTIVE or DRAINING (a STANDBY cluster has no airspace)
+	Load       int        `json:"load"`   // aircraft this sector controls right now
+	region     fsm.Region
 }
 
 // job is one ownership change the gateway coordinates.
@@ -83,8 +88,9 @@ type stats struct {
 }
 
 type gateway struct {
-	clusters map[string][]string // cluster -> node IDs
-	sectors  []sector
+	clusters map[string][]string    // cluster -> node IDs
+	geo      atomic.Pointer[geoMap] // routing table built from the registry's sector map (elastic.go)
+	el       *elastic               // elastic-sector controller; nil in tests
 	client   *http.Client
 	jobs     chan job
 	senders  map[string]chan []position // node ID -> FIFO outbound queue
@@ -94,6 +100,8 @@ type gateway struct {
 	aircraft map[string]position            // callsign -> latest report
 	outbox   map[string]map[string]position // controlling sector -> callsign -> report
 	owners   map[string]fsm.Owner           // registry's ownership table (cached)
+	smap     fsm.SectorMap                  // registry's sector map (cached)
+	seen     map[string]time.Time           // callsign -> when it last reported
 	inflight map[string]bool                // callsigns with a job queued or running
 	ready    map[string]readiness           // cluster -> Ready flag (ready.go)
 	clr      clearanceState                 // clearance buffer and history (clearance.go)
@@ -106,7 +114,7 @@ type gateway struct {
 func main() {
 	g := &gateway{
 		clusters: parseClusters(os.Getenv("CLUSTERS")),
-		sectors:  defaultSectors(),
+		el:       newElastic(loadElasticConfig()),
 		client:   &http.Client{Timeout: time.Second},
 		jobs:     make(chan job, 1024),
 		senders:  map[string]chan []position{},
@@ -114,11 +122,13 @@ func main() {
 		aircraft: map[string]position{},
 		outbox:   map[string]map[string]position{},
 		owners:   map[string]fsm.Owner{},
+		seen:     map[string]time.Time{},
 		inflight: map[string]bool{},
 		ready:    map[string]readiness{},
 		ver:      verifierFromEnv(),
 		auth:     authFromEnv(),
 	}
+	g.geo.Store(fallbackGeo) // until the registry's map is read
 	for c, ids := range g.clusters {
 		if c == "registry" {
 			continue
@@ -135,6 +145,7 @@ func main() {
 	if g.ver != nil {
 		go g.verifyLoop()
 	}
+	go g.elasticLoop()
 	for range 4 {
 		go g.worker()
 	}
@@ -151,6 +162,8 @@ func main() {
 	mux.HandleFunc("POST /api/login", g.loginHandler)
 	mux.HandleFunc("POST /api/clearance", g.clearanceHandler)
 	mux.HandleFunc("POST /api/observations", g.observationsHandler)
+	mux.HandleFunc("POST /api/elastic/split", g.elasticSplit)
+	mux.HandleFunc("POST /api/elastic/merge", g.elasticMerge)
 	addr := envOr("HTTP_ADDR", ":8080")
 	log.Printf("gateway on %s, clusters=%v", addr, g.clusters)
 	log.Fatal(http.ListenAndServe(addr, mux))
@@ -188,8 +201,12 @@ func (g *gateway) geoSector(p position) string {
 	if math.Hypot(p.X-100, p.Y-100) <= 15 && p.Alt < 10000 {
 		return "tower"
 	}
-	for _, s := range g.sectors {
-		if p.X >= s.X && p.X < s.X+s.W && p.Y >= s.Y && p.Y < s.Y+s.H {
+	gm := g.geoMap()
+	for _, s := range gm.sectors {
+		if s.region.Contains(p.X, p.Y) {
+			if to, draining := gm.into[s.Name]; draining {
+				return to // a draining sector's airspace already belongs to its neighbour
+			}
 			return s.Name
 		}
 	}
@@ -237,6 +254,10 @@ func (g *gateway) accept(p position) {
 	}
 	g.aircraft[p.Callsign] = p
 	g.ver.claim(p, time.Now())
+	if g.seen == nil {
+		g.seen = map[string]time.Time{}
+	}
+	g.seen[p.Callsign] = time.Now()
 	if p.Owner != "" {
 		if g.outbox[p.Owner] == nil {
 			g.outbox[p.Owner] = map[string]position{}
@@ -441,6 +462,7 @@ func (g *gateway) pollLoop() {
 		wg.Wait()
 		g.updateReadiness(time.Now())
 		g.refreshOwners()
+		g.refreshSectors()
 	}
 }
 
@@ -500,6 +522,7 @@ type picture struct {
 	Aircraft []position              `json:"aircraft"`
 	Handoff  stats                   `json:"handoff"`
 	Ready    map[string]readiness    `json:"ready"`
+	Elastic  elasticPicture          `json:"elastic"`
 
 	Clearances      []clearance    `json:"clearances"`       // recent, newest first
 	ClearanceQueues map[string]int `json:"clearance_queues"` // cluster -> buffered count
@@ -516,7 +539,9 @@ type picture struct {
 func (g *gateway) snapshot() picture {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	pic := picture{Time: time.Now().UnixMilli(), Sectors: g.sectors, Clusters: map[string][]nodeStatus{}, Handoff: g.st}
+	now := time.Now()
+	pic := picture{Time: now.UnixMilli(), Sectors: g.sectorViewLocked(now), Clusters: map[string][]nodeStatus{}, Handoff: g.st}
+	pic.Elastic = g.elasticPictureLocked(now)
 	pic.Handoff.Queued = len(g.jobs)
 	pic.Ready = g.readySnapshotLocked(time.Now())
 	pic.Clearances = g.clearanceSnapshotLocked()

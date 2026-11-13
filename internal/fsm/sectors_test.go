@@ -211,3 +211,37 @@ func TestRestoreOldSnapshotWithoutSectorMap(t *testing.T) {
 		t.Fatal("old snapshot should restore with an empty sector map")
 	}
 }
+
+func TestMergeTarget(t *testing.T) {
+	f := seeded(t)
+	if _, ok := f.Sectors().MergeTarget("sector-1"); ok {
+		t.Fatal("a lone sector has nobody to merge into")
+	}
+	mustMap(t, applyAny(f, 2, "split", "sector-1", SplitReq{Child: "spare", Axis: "x"}))
+	m := f.Sectors()
+	if to, ok := m.MergeTarget("spare"); !ok || to != "sector-1" {
+		t.Fatalf("spare should merge into sector-1, got %q %v", to, ok)
+	}
+	if to, ok := m.MergeTarget("sector-1"); !ok || to != "spare" {
+		t.Fatalf("and the other way round, got %q %v", to, ok)
+	}
+	if _, ok := m.MergeTarget("nope"); ok {
+		t.Fatal("unknown sector")
+	}
+
+	// two neighbours share a full edge with "a": the lowest name wins, every time
+	g := New()
+	mustMap(t, applyAny(g, 1, "sector_init", "", []Sector{
+		{Name: "a", Status: SectorActive, Region: Region{0, 0, 50, 50}},
+		{Name: "c", Status: SectorActive, Region: Region{0, 50, 50, 100}},
+		{Name: "b", Status: SectorActive, Region: Region{50, 0, 100, 50}},
+	}))
+	if to, _ := g.Sectors().MergeTarget("a"); to != "b" {
+		t.Fatalf("lowest-named neighbour should win, got %q", to)
+	}
+	// a DRAINING neighbour is not a valid target
+	mustMap(t, applyAny(g, 2, "drain", "b", nil))
+	if to, _ := g.Sectors().MergeTarget("a"); to != "c" {
+		t.Fatalf("a draining sector cannot absorb others, got %q", to)
+	}
+}

@@ -221,17 +221,7 @@ func (f *FSM) applySector(l *raft.Log, c Command) interface{} {
 		}
 		// Refuse if there is nobody to hand the flights to: the sector could
 		// never be merged and would sit DRAINING for ever.
-		hasNeighbour := false
-		for _, o := range f.sectors {
-			if o.Name == s.Name || o.Status != SectorActive {
-				continue
-			}
-			if _, ok := s.Region.Union(o.Region); ok {
-				hasNeighbour = true
-				break
-			}
-		}
-		if !hasNeighbour {
+		if _, ok := f.sectorMapLocked().MergeTarget(c.Key); !ok {
 			return fmt.Errorf("cannot drain %s: no ACTIVE neighbour shares a full edge", c.Key)
 		}
 		s.Status, s.Index = SectorDraining, l.Index
@@ -285,4 +275,26 @@ func (m SectorMap) SectorNames() []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// MergeTarget returns the sector that absorbs the named sector when it is
+// merged away: the ACTIVE neighbour whose region shares a whole edge with it
+// (the lowest name if several do). It is a pure function of the map, so the
+// registry (to validate "drain") and every gateway (to know where a DRAINING
+// sector's flights must go) always agree without storing the choice anywhere.
+func (m SectorMap) MergeTarget(name string) (string, bool) {
+	s, ok := m.Sectors[name]
+	if !ok || s.Region.Empty() {
+		return "", false
+	}
+	for _, n := range m.SectorNames() {
+		o := m.Sectors[n]
+		if n == name || o.Status != SectorActive {
+			continue
+		}
+		if _, ok := s.Region.Union(o.Region); ok {
+			return n, true
+		}
+	}
+	return "", false
 }

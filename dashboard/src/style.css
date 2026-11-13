@@ -21,3 +21,7 @@ td { padding: 2px 6px; border-bottom: 1px solid #1f3a2a; }
 .committed { color: #b8f5c8; }
 .pending, .sending { color: #ffb000; }
 .rejected, .expired { color: #ff6b6b; }
+.elastic button { background: #12301f; color: #b8f5c8; border: 1px solid #1f5a3a; padding: 1px 8px; margin-right: 4px; font: inherit; font-size: 11px; cursor: pointer; }
+.elastic .DRAINING { color: #ffb000; }
+.elastic .STANDBY { color: #5fa57a; }
+

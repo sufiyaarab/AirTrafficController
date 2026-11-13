@@ -94,6 +94,7 @@ func main() {
 	mux.HandleFunc("GET /state", s.state)
 	mux.HandleFunc("POST /apply", s.apply)
 	mux.HandleFunc("GET /owners", s.owners)
+	mux.HandleFunc("GET /sectors", s.sectors)
 	mux.HandleFunc("POST /track", s.track)
 	mux.HandleFunc("GET /tracks", s.tracksHandler)
 	mux.HandleFunc("GET /metrics", s.metrics)
@@ -157,6 +158,12 @@ func (s *server) state(w http.ResponseWriter, _ *http.Request) {
 
 func (s *server) owners(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, s.fsm.Owners())
+}
+
+// sectors returns the registry's sector map (empty on every other cluster).
+// Like /owners, read it from the leader when it must be current.
+func (s *server) sectors(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, s.fsm.Sectors())
 }
 
 // track receives one B-multicast batch of position reports from the gateway.

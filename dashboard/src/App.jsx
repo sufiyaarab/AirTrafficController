@@ -48,9 +48,15 @@ function Radar({ pic, selected, onSelect, coverage }) {
     ctx.font = '12px monospace'
     for (const sec of pic?.sectors ?? []) {
       const [x, y, w, h] = sec.box
+      const draining = sec.status === 'DRAINING' // amber and dashed while being merged away
+      ctx.strokeStyle = draining ? '#ffb000' : '#1f5a3a'
+      ctx.fillStyle = draining ? '#ffb000' : '#3c8a5c'
+      ctx.setLineDash(draining ? [6, 4] : [])
       ctx.strokeRect(x * s, toY(y + h), w * s, h * s)
-      ctx.fillText(sec.name, x * s + 6, toY(y + h) + 16)
+      ctx.setLineDash([])
+      ctx.fillText(`${sec.name} · ${sec.load ?? 0} ac${draining ? ' · draining' : ''}`, x * s + 6, toY(y + h) + 16)
     }
+    ctx.strokeStyle = '#1f5a3a'
     ctx.beginPath() // tower circle, matches the gateway's 15 NM radius
     ctx.arc(100 * s, toY(100), 15 * s, 0, 2 * Math.PI)
     ctx.stroke()
@@ -265,6 +271,59 @@ function Clearances({ pic }) {
   )
 }
 
+// Elastic sectors: each sector's load, buttons to split or merge by hand, and
+// what the controller has done recently. The gateway splits a sector that stays
+// over the limit into the idle standby cluster, and merges it back when quiet.
+function Elastic({ pic, session }) {
+  const el = pic?.elastic
+  const [msg, setMsg] = useState(null)
+  if (!el || !el.sectors?.length) return null
+  const call = async (action, sector) => {
+    setMsg('sending...')
+    try {
+      const headers = { 'Content-Type': 'application/json' }
+      if (session) headers.Authorization = `Bearer ${session.token}` // splitting needs a supervisor login
+      const res = await fetch(`/api/elastic/${action}`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ sector }),
+      })
+      const body = await res.json()
+      setMsg(res.ok ? `${action} ${sector}: ok` : `${action} ${sector}: ${body.error}`)
+    } catch (err) {
+      setMsg(`gateway unreachable: ${err.message}`)
+    }
+  }
+  return (
+    <div className="elastic">
+      <h2>elastic sectors</h2>
+      <div className="hint">
+        split at {el.split_at} aircraft · merge at {el.merge_at} · {el.splits} splits · {el.merges} merges · map v{el.version}
+        {el.enabled ? '' : ' · automatic control off'}
+      </div>
+      <table><tbody>
+        {el.sectors.map((s) => (
+          <tr key={s.name} className={s.status}>
+            <td>{s.name}</td><td>{s.status}</td><td>{s.load} ac</td>
+            <td>
+              {s.status === 'ACTIVE' && <button onClick={() => call('split', s.name)}>split</button>}
+              {s.status === 'ACTIVE' && s.spare && <button onClick={() => call('merge', s.name)}>merge</button>}
+            </td>
+          </tr>
+        ))}
+      </tbody></table>
+      {msg && <div className="hint">{msg}</div>}
+      <table><tbody>
+        {el.events.slice(0, 6).map((e) => (
+          <tr key={`${e.time_ms}-${e.kind}-${e.sector}`} className={e.kind === 'error' ? 'rejected' : ''}>
+            <td>{new Date(e.time_ms).toLocaleTimeString()}</td><td>{e.kind}</td><td>{e.sector}</td><td>{e.detail}</td>
+          </tr>
+        ))}
+      </tbody></table>
+    </div>
+  )
+}
+
 // Spoofed-aircraft alerts: aircraft whose claimed position disagrees with
 // the ranges the ground receivers measured (gateway verify.go).
 function Alerts({ pic, coverage, setCoverage, onSelect }) {
@@ -357,6 +416,7 @@ export default function App() {
         <Alerts pic={pic} coverage={coverage} setCoverage={setCoverage} onSelect={setSelected} />
         <Clearances pic={pic} />
         <Handoffs pic={pic} />
+        <Elastic pic={pic} session={session} />
         {/* TODO: live safety-invariant panel goes here */}
         <Clusters pic={pic} />
       </div>

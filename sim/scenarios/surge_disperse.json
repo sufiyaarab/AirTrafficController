@@ -1,0 +1,485 @@
+{
+  "name": "Surge then disperse (speeds x6, so one full split-and-merge cycle fits in a few minutes)",
+  "aircraft": [
+    {
+      "callsign": "SRG001",
+      "x": 30.0,
+      "y": 130.0,
+      "alt": 20000,
+      "heading": 0,
+      "speed": 1800
+    },
+    {
+      "callsign": "SRG002",
+      "x": 34.4,
+      "y": 130.0,
+      "alt": 23000,
+      "heading": 37,
+      "speed": 1800
+    },
+    {
+      "callsign": "SRG003",
+      "x": 38.8,
+      "y": 130.0,
+      "alt": 26000,
+      "heading": 74,
+      "speed": 1800
+    },
+    {
+      "callsign": "SRG004",
+      "x": 43.2,
+      "y": 130.0,
+      "alt": 29000,
+      "heading": 111,
+      "speed": 1800
+    },
+    {
+      "callsign": "SRG005",
+      "x": 47.6,
+      "y": 130.0,
+      "alt": 20000,
+      "heading": 148,
+      "speed": 1800
+    },
+    {
+      "callsign": "SRG006",
+      "x": 52.0,
+      "y": 130.0,
+      "alt": 23000,
+      "heading": 185,
+      "speed": 1800
+    },
+    {
+      "callsign": "SRG007",
+      "x": 56.4,
+      "y": 130.0,
+      "alt": 26000,
+      "heading": 222,
+      "speed": 1800
+    },
+    {
+      "callsign": "SRG008",
+      "x": 60.8,
+      "y": 130.0,
+      "alt": 29000,
+      "heading": 259,
+      "speed": 1800
+    },
+    {
+      "callsign": "SRG009",
+      "x": 65.2,
+      "y": 130.0,
+      "alt": 20000,
+      "heading": 296,
+      "speed": 1800
+    },
+    {
+      "callsign": "SRG010",
+      "x": 69.6,
+      "y": 130.0,
+      "alt": 23000,
+      "heading": 333,
+      "speed": 1800
+    },
+    {
+      "callsign": "SRG011",
+      "x": 30.0,
+      "y": 137.5,
+      "alt": 25000,
+      "heading": 53,
+      "speed": 3000
+    },
+    {
+      "callsign": "SRG012",
+      "x": 34.4,
+      "y": 137.5,
+      "alt": 28000,
+      "heading": 90,
+      "speed": 3000
+    },
+    {
+      "callsign": "SRG013",
+      "x": 38.8,
+      "y": 137.5,
+      "alt": 31000,
+      "heading": 127,
+      "speed": 3000
+    },
+    {
+      "callsign": "SRG014",
+      "x": 43.2,
+      "y": 137.5,
+      "alt": 22000,
+      "heading": 164,
+      "speed": 3000
+    },
+    {
+      "callsign": "SRG015",
+      "x": 47.6,
+      "y": 137.5,
+      "alt": 25000,
+      "heading": 201,
+      "speed": 3000
+    },
+    {
+      "callsign": "SRG016",
+      "x": 52.0,
+      "y": 137.5,
+      "alt": 28000,
+      "heading": 238,
+      "speed": 3000
+    },
+    {
+      "callsign": "SRG017",
+      "x": 56.4,
+      "y": 137.5,
+      "alt": 31000,
+      "heading": 275,
+      "speed": 3000
+    },
+    {
+      "callsign": "SRG018",
+      "x": 60.8,
+      "y": 137.5,
+      "alt": 22000,
+      "heading": 312,
+      "speed": 3000
+    },
+    {
+      "callsign": "SRG019",
+      "x": 65.2,
+      "y": 137.5,
+      "alt": 25000,
+      "heading": 349,
+      "speed": 3000
+    },
+    {
+      "callsign": "SRG020",
+      "x": 69.6,
+      "y": 137.5,
+      "alt": 28000,
+      "heading": 26,
+      "speed": 3000
+    },
+    {
+      "callsign": "SRG021",
+      "x": 30.0,
+      "y": 145.0,
+      "alt": 30000,
+      "heading": 106,
+      "speed": 2800
+    },
+    {
+      "callsign": "SRG022",
+      "x": 34.4,
+      "y": 145.0,
+      "alt": 21000,
+      "heading": 143,
+      "speed": 2800
+    },
+    {
+      "callsign": "SRG023",
+      "x": 38.8,
+      "y": 145.0,
+      "alt": 24000,
+      "heading": 180,
+      "speed": 2800
+    },
+    {
+      "callsign": "SRG024",
+      "x": 43.2,
+      "y": 145.0,
+      "alt": 27000,
+      "heading": 217,
+      "speed": 2800
+    },
+    {
+      "callsign": "SRG025",
+      "x": 47.6,
+      "y": 145.0,
+      "alt": 30000,
+      "heading": 254,
+      "speed": 2800
+    },
+    {
+      "callsign": "SRG026",
+      "x": 52.0,
+      "y": 145.0,
+      "alt": 21000,
+      "heading": 291,
+      "speed": 2800
+    },
+    {
+      "callsign": "SRG027",
+      "x": 56.4,
+      "y": 145.0,
+      "alt": 24000,
+      "heading": 328,
+      "speed": 2800
+    },
+    {
+      "callsign": "SRG028",
+      "x": 60.8,
+      "y": 145.0,
+      "alt": 27000,
+      "heading": 5,
+      "speed": 2800
+    },
+    {
+      "callsign": "SRG029",
+      "x": 65.2,
+      "y": 145.0,
+      "alt": 30000,
+      "heading": 42,
+      "speed": 2800
+    },
+    {
+      "callsign": "SRG030",
+      "x": 69.6,
+      "y": 145.0,
+      "alt": 21000,
+      "heading": 79,
+      "speed": 2800
+    },
+    {
+      "callsign": "SRG031",
+      "x": 30.0,
+      "y": 152.5,
+      "alt": 23000,
+      "heading": 159,
+      "speed": 2600
+    },
+    {
+      "callsign": "SRG032",
+      "x": 34.4,
+      "y": 152.5,
+      "alt": 26000,
+      "heading": 196,
+      "speed": 2600
+    },
+    {
+      "callsign": "SRG033",
+      "x": 38.8,
+      "y": 152.5,
+      "alt": 29000,
+      "heading": 233,
+      "speed": 2600
+    },
+    {
+      "callsign": "SRG034",
+      "x": 43.2,
+      "y": 152.5,
+      "alt": 20000,
+      "heading": 270,
+      "speed": 2600
+    },
+    {
+      "callsign": "SRG035",
+      "x": 47.6,
+      "y": 152.5,
+      "alt": 23000,
+      "heading": 307,
+      "speed": 2600
+    },
+    {
+      "callsign": "SRG036",
+      "x": 52.0,
+      "y": 152.5,
+      "alt": 26000,
+      "heading": 344,
+      "speed": 2600
+    },
+    {
+      "callsign": "SRG037",
+      "x": 56.4,
+      "y": 152.5,
+      "alt": 29000,
+      "heading": 21,
+      "speed": 2600
+    },
+    {
+      "callsign": "SRG038",
+      "x": 60.8,
+      "y": 152.5,
+      "alt": 20000,
+      "heading": 58,
+      "speed": 2600
+    },
+    {
+      "callsign": "SRG039",
+      "x": 65.2,
+      "y": 152.5,
+      "alt": 23000,
+      "heading": 95,
+      "speed": 2600
+    },
+    {
+      "callsign": "SRG040",
+      "x": 69.6,
+      "y": 152.5,
+      "alt": 26000,
+      "heading": 132,
+      "speed": 2600
+    },
+    {
+      "callsign": "SRG041",
+      "x": 30.0,
+      "y": 160.0,
+      "alt": 28000,
+      "heading": 212,
+      "speed": 2400
+    },
+    {
+      "callsign": "SRG042",
+      "x": 34.4,
+      "y": 160.0,
+      "alt": 31000,
+      "heading": 249,
+      "speed": 2400
+    },
+    {
+      "callsign": "SRG043",
+      "x": 38.8,
+      "y": 160.0,
+      "alt": 22000,
+      "heading": 286,
+      "speed": 2400
+    },
+    {
+      "callsign": "SRG044",
+      "x": 43.2,
+      "y": 160.0,
+      "alt": 25000,
+      "heading": 323,
+      "speed": 2400
+    },
+    {
+      "callsign": "SRG045",
+      "x": 47.6,
+      "y": 160.0,
+      "alt": 28000,
+      "heading": 0,
+      "speed": 2400
+    },
+    {
+      "callsign": "SRG046",
+      "x": 52.0,
+      "y": 160.0,
+      "alt": 31000,
+      "heading": 37,
+      "speed": 2400
+    },
+    {
+      "callsign": "SRG047",
+      "x": 56.4,
+      "y": 160.0,
+      "alt": 22000,
+      "heading": 74,
+      "speed": 2400
+    },
+    {
+      "callsign": "SRG048",
+      "x": 60.8,
+      "y": 160.0,
+      "alt": 25000,
+      "heading": 111,
+      "speed": 2400
+    },
+    {
+      "callsign": "SRG049",
+      "x": 65.2,
+      "y": 160.0,
+      "alt": 28000,
+      "heading": 148,
+      "speed": 2400
+    },
+    {
+      "callsign": "SRG050",
+      "x": 69.6,
+      "y": 160.0,
+      "alt": 31000,
+      "heading": 185,
+      "speed": 2400
+    },
+    {
+      "callsign": "SRG051",
+      "x": 30.0,
+      "y": 167.5,
+      "alt": 21000,
+      "heading": 265,
+      "speed": 2200
+    },
+    {
+      "callsign": "SRG052",
+      "x": 34.4,
+      "y": 167.5,
+      "alt": 24000,
+      "heading": 302,
+      "speed": 2200
+    },
+    {
+      "callsign": "SRG053",
+      "x": 38.8,
+      "y": 167.5,
+      "alt": 27000,
+      "heading": 339,
+      "speed": 2200
+    },
+    {
+      "callsign": "SRG054",
+      "x": 43.2,
+      "y": 167.5,
+      "alt": 30000,
+      "heading": 16,
+      "speed": 2200
+    },
+    {
+      "callsign": "SRG055",
+      "x": 47.6,
+      "y": 167.5,
+      "alt": 21000,
+      "heading": 53,
+      "speed": 2200
+    },
+    {
+      "callsign": "SRG056",
+      "x": 52.0,
+      "y": 167.5,
+      "alt": 24000,
+      "heading": 90,
+      "speed": 2200
+    },
+    {
+      "callsign": "SRG057",
+      "x": 56.4,
+      "y": 167.5,
+      "alt": 27000,
+      "heading": 127,
+      "speed": 2200
+    },
+    {
+      "callsign": "SRG058",
+      "x": 60.8,
+      "y": 167.5,
+      "alt": 30000,
+      "heading": 164,
+      "speed": 2200
+    },
+    {
+      "callsign": "SRG059",
+      "x": 65.2,
+      "y": 167.5,
+      "alt": 21000,
+      "heading": 201,
+      "speed": 2200
+    },
+    {
+      "callsign": "SRG060",
+      "x": 69.6,
+      "y": 167.5,
+      "alt": 24000,
+      "heading": 238,
+      "speed": 2200
+    }
+  ]
+}

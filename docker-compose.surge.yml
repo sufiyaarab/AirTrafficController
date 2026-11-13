@@ -1,0 +1,13 @@
+# Elastic-sector demo: 60 aircraft appear together in sector-1, then spread
+# out. Expect the gateway to split sector-1 into the standby cluster within a
+# few seconds, then merge it back once traffic has thinned.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.surge.yml up --build
+#
+# Watch http://localhost:3000 (the "elastic sectors" panel) or the gateway log:
+#   docker compose logs -f gateway | grep elastic
+
+services:
+  simulator:
+    environment:
+      SCENARIO: "scenarios/surge_disperse.json"
